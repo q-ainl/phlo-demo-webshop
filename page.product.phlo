@@ -73,7 +73,7 @@ view($product, $related):
 	</div>
 </dialog>
 
-<script>
+<script ns=app>
 on('change', '#variant-select', (select) => {
 	const option = select.options[select.selectedIndex]
 	const price = option?.dataset?.price || ''

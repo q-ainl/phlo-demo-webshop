@@ -8,6 +8,7 @@ static run {
 	set_time_limit(300)
 	mt_srand(20260723)
 	static::clearUploads()
+	static::heroBanner()
 	static::tables()
 	$categoryIds = static::categories()
 	static::products($categoryIds)
@@ -338,6 +339,34 @@ static centered($im, $font, $size, $y, $text, $color, $width = 800){
 	if (!$font) return imagestring($im, 4, (int)(($width - strlen($text) * 8) / 2), $y - 10, $text, $color)
 	$box = imagettfbbox($size, 0, $font, $text)
 	imagettftext($im, $size, 0, (int)(($width - ($box[2] - $box[0])) / 2), $y, $color, $font, $text)
+}
+
+// The hero banner behind the page headers: a soft atelier gradient with a gold
+// thread motif, written to www/hero.png (referenced from style.shop.phlo).
+static heroBanner {
+	$w = 1920
+	$h = 1080
+	$im = imagecreatetruecolor($w, $h)
+	$top = [242, 236, 222]
+	$bottom = [212, 199, 175]
+	foreach (range(0, $h - 1) AS $y){
+		$mix = $y / $h
+		$color = imagecolorallocate($im, (int)($top[0] + ($bottom[0] - $top[0]) * $mix), (int)($top[1] + ($bottom[1] - $top[1]) * $mix), (int)($top[2] + ($bottom[2] - $top[2]) * $mix))
+		imageline($im, 0, $y, $w, $y, $color)
+	}
+	$gold = imagecolorallocatealpha($im, 176, 141, 38, 90)
+	$soft = imagecolorallocatealpha($im, 255, 255, 255, 100)
+	imagesetthickness($im, 2)
+	foreach (range(0, 14) AS $i){
+		$x = $i * 160 - 240
+		imageline($im, $x, $h, $x + 520, 0, $i % 3 === 0 ? $gold : $soft)
+	}
+	imagesetthickness($im, 1)
+	imageellipse($im, (int)($w * 0.78), (int)($h * 0.3), 460, 460, $soft)
+	imageellipse($im, (int)($w * 0.78), (int)($h * 0.3), 380, 380, $gold)
+	ob_start()
+	imagepng($im, null, 8)
+	file_put_contents(www.'hero.png', ob_get_clean())
 }
 
 static productImage($title, $hex, $token, $variant = 0){

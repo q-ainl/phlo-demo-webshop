@@ -63,14 +63,14 @@ view footer:
 	<p.footer-note>{en: Demo webshop built with} <a href="https://phlo.tech" target=_blank rel=noopener>Phlo</a>.</p>
 </footer>
 
-<script>
+<script ns=app>
 on('click', '#mobile-menu-btn', () => app.mod.class('#mobile-nav-overlay', 'open'))
 on('click', '#close-mobile-menu', () => app.mod.class('#mobile-nav-overlay', '-open'))
 on('click', '#mobile-nav-overlay', (nav, e, isSelf) => isSelf && app.mod.class(nav, '-open'))
 on('click', '.mobile-nav-links a', () => app.mod.class('#mobile-nav-overlay', '-open'))
 </script>
 
-<style>
+<style ns=app>
 :root {
 	$accent-gold: #B08D26
 	$accent-gold-dim: #D4AF37

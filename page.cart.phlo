@@ -97,7 +97,7 @@ view summary:
 	</div>
 </div>
 
-<script>
+<script ns=app>
 const updateAmount = (id, amount) => app.get(`cart/update/${id}/${amount}`)
 on('click', '.qty-btn', (btn) => {
 	const input = document.querySelector(`.qty-input[data-id=\"${btn.dataset.id}\"]`)

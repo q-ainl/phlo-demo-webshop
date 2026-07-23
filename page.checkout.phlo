@@ -107,7 +107,7 @@ view:
 	</div>
 </main>
 
-<script>
+<script ns=app>
 on('click', '.checkout-btn', (btn, e) => {
 	const form = document.getElementById('checkout-options')
 	if (!form) return true

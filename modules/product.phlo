@@ -60,7 +60,7 @@ static schema => arr (
 	),
 	thumb: field (
 		type: 'virtual',
-		label: fn($record) => tag('img', src: ($image = current($record->images)) ? "/thumbs/$image->name_token/".rawurlencode($image->name) : '/no.image.jpg'),
+		label: fn($record) => tag('img', src: ($image = current($record->images)) ? "/thumbs/$image->name_token/".rawurlencode($image->name) : '/no.image.jpg', height: 56, style: 'display:block'),
 	),
 	title: field (
 		type: 'text',

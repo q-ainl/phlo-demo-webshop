@@ -22,6 +22,9 @@ prop menu = [
 prop theme => %session->theme ?? 'kiro'
 prop trans => %session->trans ?? 'slide'
 
+// Two asset bundles: the storefront lives in ns 'app', the CMS admin in 'cms'.
+prop ns => $this->admin ? 'cms' : 'app'
+
 // HTTP basic auth for the admin, from [dashboard] in data/creds.ini (or the
 // PHLO__dashboard__* environment variables). Without credentials the admin is
 // open, which is fine for a local demo; set them before exposing it.
@@ -31,6 +34,10 @@ method gate {
 	%res->header('WWW-Authenticate', 'Basic realm="Couture Admin"')
 	error('Authentication required', 401)
 }
+
+// Caddy serves www/ files before PHP ever runs; the PHP built-in server does
+// not, so serve the built assets ourselves when a request slips through.
+if (%req->path && strpos(%req->path, '..') === false && !str_ends_with(%req->path, '.php') && is_file(www.%req->path)) return output(file: www.%req->path)
 
 if ($this->admin){
 	$this->gate

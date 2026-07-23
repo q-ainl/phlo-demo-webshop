@@ -36,6 +36,7 @@
         "DB/DB",
         "DB/model",
         "DB/SQLite",
+        "DOM/charts",
         "DOM/CSS.fixes",
         "DOM/CSS.var",
         "DOM/datatags",
@@ -95,5 +96,21 @@
             "%app/modules/"
         ]
     },
-    "icons": "%app/icons/"
+    "icons": "%app/icons/",
+    "iconNS": "app,cms",
+    "defaultNS": "cms",
+    "phloNS": [
+        "app",
+        "cms"
+    ],
+    "resourceNS": {
+        "DOM/datatags": "app,cms",
+        "DOM/exists": "app,cms",
+        "DOM/form": "app,cms",
+        "DOM/link": "app,cms",
+        "DOM/shorthands": "app,cms",
+        "DOM/toasts": "app,cms",
+        "DOM/visible": "app,cms",
+        "security/CSRF": "app,cms"
+    }
 }

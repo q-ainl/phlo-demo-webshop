@@ -42,7 +42,7 @@ view bodyRecords:
 	{{ $this->noRecords }}
 </if>
 
-<script>
+<script ns=cms>
 let draggingRow = null
 let dragStartOrder = null
 let dragTbody = null
@@ -86,7 +86,7 @@ on('pointerup', 'body', (body, e) => {
 })
 </script>
 
-<style>
+<style ns=cms>
 td.sort {
 	cursor: grab
 	font-size: 2em

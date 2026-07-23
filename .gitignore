@@ -2,6 +2,7 @@
 php/
 www/*.css
 www/*.js
+!www/chart.js
 www/icons.png
 
 # Runtime
