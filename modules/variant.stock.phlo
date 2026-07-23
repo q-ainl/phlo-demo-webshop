@@ -4,7 +4,7 @@ static table = 'variant_stock'
 static titleList = 'Stock'
 static titleRecord = 'Stock'
 
-view: $this->location.': '.$this->level
+view => $this->location.': '.$this->level
 
 static schema => arr (
 	id: field (

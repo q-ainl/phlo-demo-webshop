@@ -100,6 +100,8 @@ static schema => arr (
 		obj: 'category',
 		table: 'category_products',
 		list: false,
+		create: true,
+		change: true,
 	),
 	variants: field (
 		type: 'child',

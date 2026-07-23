@@ -4,7 +4,7 @@ static table = 'order_variants'
 static titleList = 'Order lines'
 static titleRecord = 'Order line'
 
-view: $this->quantity.'x '.$this->title
+view => $this->quantity.'x '.$this->title
 
 static schema => arr (
 	id: field (

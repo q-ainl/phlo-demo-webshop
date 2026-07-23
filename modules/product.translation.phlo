@@ -4,7 +4,7 @@ static table = 'product_translations'
 static titleList = 'Product translations'
 static titleRecord = 'Translation'
 
-view: $this->lang.': '.$this->title
+view => $this->lang.': '.$this->title
 
 static schema => arr (
 	id: field (

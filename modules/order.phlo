@@ -5,7 +5,7 @@ static order = 'id DESC'
 static titleList = 'Orders'
 static titleRecord = 'Order'
 
-view: '#'.$this->id.' '.trim($this->firstName.space.$this->lastName)
+view => '#'.$this->id.space.trim($this->firstName.space.$this->lastName)
 
 static objFilters = [
 	'new'       => ['title' => 'New',       'filter' => "status = 'new'"],
