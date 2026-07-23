@@ -1,0 +1,33 @@
+view category($howMany = 3, $class = 'grid', $products = null):
+<div#product-grid class="$class">
+	<foreach ($products ??= product::records(limit: $howMany, where: 'active=1')) AS $product>
+		<a.product-card.async href="$product->url">
+			<div.img-wrapper>
+				<img.img-primary src="{( $product->image->thumbSrc ?? '/no.image.jpg' )}" alt="{[ $product->name ]}">
+				<img.img-secondary src="{( current(array_slice($product->images, 1))?->thumbSrc ?? ($product->image->thumbSrc ?? '/no.image.jpg') )}" alt="{[ $product->name ]}">
+			</div>
+			<div.product-info>
+				<div.product-meta>{( $product->material ? ucfirst(en($product->material)) : en('Supplies') )}{( $product->color ? ' • '.ucfirst(en($product->color)) : void )}</div>
+				<h3>{[ $product->name ]}</h3>
+				<div.product-price>{( $product->priceMin !== $product->priceMax ? en('From').space.'&euro; '.price($product->priceMin) : '&euro; '.price($product->priceMin) )}</div>
+				<span.add-btn>{en: View product}</span>
+			</div>
+		</a>
+	</foreach>
+</div>
+
+view related($products):
+<div.related-grid>
+	<foreach $products AS $product>
+		<a.related-card.async href="$product->url">
+			<div.img-wrapper.related-img>
+				<img.img-primary src="{( $product->image->thumbSrc ?? '/no.image.jpg' )}" alt="{[ $product->name ]}">
+				<img.img-secondary src="{( current(array_slice($product->images, 1))?->thumbSrc ?? ($product->image->thumbSrc ?? '/no.image.jpg') )}" alt="{[ $product->name ]}">
+			</div>
+			<div.related-info>
+				<h4>{[ $product->name ]}</h4>
+				<div.product-price>&euro; {{ price($product->price) }}</div>
+			</div>
+		</a>
+	</foreach>
+</div>

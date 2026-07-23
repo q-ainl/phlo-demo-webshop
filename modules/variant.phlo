@@ -1,0 +1,60 @@
+@ extends: entity
+
+static table = 'variants'
+static titleList = 'Variants'
+static titleRecord = 'Variant'
+
+view: $this->label
+
+prop label => implode(' - ', array_filter([$this->size ?: null, $this->remarks ?: null, $this->sku ?: null])) ?: '#'.$this->id
+prop stockLevel => array_sum(loop($this->stock, fn($stock) => $stock->level))
+prop productId => $this->objData['product'] ?? null
+
+static schema => arr (
+	id: field (
+		type: 'number',
+		create: false,
+		change: false,
+		list: false,
+	),
+	product: field (
+		type: 'parent',
+		obj: 'product',
+	),
+	sku: field (
+		type: 'text',
+		title: 'SKU',
+		length: 20,
+	),
+	size: field (
+		type: 'text',
+		length: 20,
+	),
+	remarks: field (
+		type: 'text',
+		length: 100,
+		list: false,
+	),
+	priceCost: field (
+		type: 'price',
+		title: 'Cost price',
+		list: false,
+		default: 0,
+	),
+	priceOld: field (
+		type: 'price',
+		title: 'Old price',
+		default: 0,
+	),
+	price: field (
+		type: 'price',
+		default: 0,
+	),
+	active: field (
+		type: 'bool',
+	),
+	stock: field (
+		type: 'child',
+		obj: 'variant_stock',
+	),
+)

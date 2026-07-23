@@ -1,0 +1,40 @@
+method render => page($this->view, en('Contact'), $this->hero)
+
+method hero => %layout->hero('Contact', 'We are here for you.', 'contact')
+
+view:
+<main.page-main>
+	<div.page-grid-2>
+		<div>
+			<h3>{en: Customer service}</h3>
+			<p.page-text>{en: Questions about a product, advice on boning sizes, or questions about your order?}</p>
+			<div.page-text>
+				<strong>Email:</strong><br>
+				<a.brand-link href="mailto:info@example.com">info@example.com</a>
+			</div>
+			<div.page-text>
+				<strong>{en: Phone}:</strong><br>
+				+31 (0)20 123 4567
+			</div>
+		</div>
+		<div>
+			<h3>{en: Visiting address}</h3>
+			<p.page-text>{en: Our atelier can be visited by appointment to collect orders.}</p>
+			<address.page-text>
+				<strong>L'Atelier Corseterie</strong><br>
+				Couturestraat 1<br>
+				1011 AB Amsterdam<br>
+				{en: The Netherlands}
+			</address>
+		</div>
+	</div>
+	<div.page-card>
+		<h3>{en: Send us a message}</h3>
+		<form.form-grid action=# method=post>
+			<input.input type=text name=name placeholder="{en: Name}">
+			<input.input type=email name=email placeholder=Email>
+			<textarea.textarea name=message rows=5 placeholder="{en: Your message}"></textarea>
+			<button.cta-btn type=submit>{en: Send}</button>
+		</form>
+	</div>
+</main>

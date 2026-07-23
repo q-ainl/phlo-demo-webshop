@@ -1,0 +1,799 @@
+@ summary: Demo data seeder for the Couture webshop. Rebuilds the SQLite schema, fills the
+@          catalogue (categories, products, variants, stock, translations in en/fr/es/de),
+@          generates the product imagery, spreads a year of demo orders over the shop and
+@          writes the fr/es/de interface translations to langs/.
+@          Run: php www/app.php seed::run
+
+static run {
+	set_time_limit(300)
+	mt_srand(20260723)
+	static::clearUploads()
+	static::tables()
+	$categoryIds = static::categories()
+	static::products($categoryIds)
+	static::orders()
+	static::langs()
+	return 'Seeded: '.category::recordCount().' categories, '.product::recordCount().' products, '.variant::recordCount().' variants, '.order::recordCount().' orders'
+}
+
+// Previous runs used different random tokens, so stale imagery piles up unless cleared.
+static clearUploads {
+	foreach ([images, thumbs] AS $dir){
+		foreach (glob($dir.'*/*') ?: [] AS $file) is_file($file) && unlink($file)
+		foreach (glob($dir.'*', GLOB_ONLYDIR) ?: [] AS $sub) @rmdir($sub)
+	}
+}
+
+static tables {
+	$db = %SQLite(data.'shop.db')
+	foreach (['order_variants', 'orders', 'variant_stock', 'variants', 'product_images', 'product_translations', 'category_products', 'category_translations', 'products', 'categories'] AS $table) $db->query("DROP TABLE IF EXISTS $table")
+	$db->query('CREATE TABLE categories (id INTEGER PRIMARY KEY AUTOINCREMENT, parent INTEGER, sort INTEGER NOT NULL DEFAULT 0, uri TEXT NOT NULL, title TEXT NOT NULL, sale INTEGER NOT NULL DEFAULT 0, text TEXT)')
+	$db->query('CREATE TABLE category_translations (id INTEGER PRIMARY KEY AUTOINCREMENT, category INTEGER NOT NULL, lang TEXT NOT NULL, uri TEXT, title TEXT, text TEXT)')
+	$db->query('CREATE TABLE category_products (category INTEGER NOT NULL, product INTEGER NOT NULL)')
+	$db->query('CREATE TABLE products (id INTEGER PRIMARY KEY AUTOINCREMENT, sku TEXT, uri TEXT NOT NULL, title TEXT NOT NULL, text TEXT, color TEXT, material TEXT, active INTEGER NOT NULL DEFAULT 1, created INTEGER, changed INTEGER)')
+	$db->query('CREATE TABLE product_translations (id INTEGER PRIMARY KEY AUTOINCREMENT, product INTEGER NOT NULL, lang TEXT NOT NULL, uri TEXT, title TEXT, text TEXT)')
+	$db->query('CREATE TABLE product_images (id INTEGER PRIMARY KEY AUTOINCREMENT, product INTEGER NOT NULL, sort INTEGER NOT NULL DEFAULT 1, name TEXT, name_token TEXT)')
+	$db->query('CREATE TABLE variants (id INTEGER PRIMARY KEY AUTOINCREMENT, product INTEGER NOT NULL, sku TEXT, size TEXT, remarks TEXT, priceCost REAL NOT NULL DEFAULT 0, priceOld REAL NOT NULL DEFAULT 0, price REAL NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1)')
+	$db->query('CREATE TABLE variant_stock (id INTEGER PRIMARY KEY AUTOINCREMENT, variant INTEGER NOT NULL, location TEXT, level INTEGER NOT NULL DEFAULT 0)')
+	$db->query('CREATE TABLE orders (id INTEGER PRIMARY KEY AUTOINCREMENT, firstName TEXT, lastName TEXT, email TEXT, phone TEXT, street TEXT, housenumber TEXT, zip TEXT, city TEXT, country TEXT, status TEXT, comment TEXT, total REAL, shipping TEXT, paymentMethod TEXT, created INTEGER)')
+	$db->query('CREATE TABLE order_variants (id INTEGER PRIMARY KEY AUTOINCREMENT, orderId INTEGER NOT NULL, variant INTEGER, title TEXT, quantity INTEGER NOT NULL DEFAULT 1, price REAL)')
+}
+
+// [title, uri, text, sale, children[], fr[], es[], de[]]; translations are [title, uri, text].
+static categoryData = [
+	['title' => 'Fabrics', 'uri' => 'fabrics', 'text' => 'Coutil, silk and every fabric a corset asks for. Woven for strength, chosen for beauty.',
+		'fr' => ['Tissus', 'tissus', 'Coutil, soie et tous les tissus qu\'un corset demande. Tissés pour la solidité, choisis pour la beauté.'],
+		'es' => ['Tejidos', 'tejidos', 'Cutí, seda y todos los tejidos que pide un corsé. Tejidos para la resistencia, elegidos por su belleza.'],
+		'de' => ['Stoffe', 'stoffe', 'Coutil, Seide und jeder Stoff, den ein Korsett verlangt. Gewebt für Stärke, gewählt für Schönheit.'],
+		'children' => [
+			['title' => 'Coutil', 'uri' => 'coutil', 'fr' => ['Coutil', 'coutil'], 'es' => ['Cutí', 'cuti'], 'de' => ['Coutil', 'coutil']],
+			['title' => 'Silk satin', 'uri' => 'silk-satin', 'fr' => ['Satin de soie', 'satin-de-soie'], 'es' => ['Satén de seda', 'saten-de-seda'], 'de' => ['Seidensatin', 'seidensatin']],
+		]],
+	['title' => 'Boning', 'uri' => 'boning',
+		'fr' => ['Baleines', 'baleines'], 'es' => ['Ballenas', 'ballenas'], 'de' => ['Stäbchen', 'staebchen'],
+		'children' => [
+			['title' => 'Spiral steel', 'uri' => 'spiral-steel', 'fr' => ['Acier spiralé', 'acier-spirale'], 'es' => ['Acero espiral', 'acero-espiral'], 'de' => ['Spiralstahl', 'spiralstahl']],
+			['title' => 'Flat steel', 'uri' => 'flat-steel', 'fr' => ['Acier plat', 'acier-plat'], 'es' => ['Acero plano', 'acero-plano'], 'de' => ['Flachstahl', 'flachstahl']],
+		]],
+	['title' => 'Closures', 'uri' => 'closures',
+		'fr' => ['Fermetures', 'fermetures'], 'es' => ['Cierres', 'cierres'], 'de' => ['Verschlüsse', 'verschluesse']],
+	['title' => 'Haberdashery', 'uri' => 'haberdashery',
+		'fr' => ['Mercerie', 'mercerie'], 'es' => ['Mercería', 'merceria'], 'de' => ['Kurzwaren', 'kurzwaren']],
+	['title' => 'Sale', 'uri' => 'sale', 'sale' => 1, 'text' => 'Last pieces and discontinued lines at a fair discount. Same quality, better price.',
+		'fr' => ['Soldes', 'soldes', 'Dernières pièces et fins de série à prix réduit. Même qualité, meilleur prix.'],
+		'es' => ['Rebajas', 'rebajas', 'Últimas piezas y líneas descatalogadas con un buen descuento. La misma calidad, mejor precio.'],
+		'de' => ['Sale', 'sale', 'Letzte Stücke und auslaufende Linien mit fairem Rabatt. Gleiche Qualität, besserer Preis.']],
+]
+
+static categories {
+	$ids = []
+	$sort = 0
+	foreach (static::$categoryData AS $data) static::category($data, null, $sort, $ids)
+	return $ids
+}
+
+static category($data, $parent, &$sort, &$ids){
+	$category = category::create (
+		parent: $parent,
+		sort: ++$sort,
+		uri: $data['uri'],
+		title: $data['title'],
+		sale: $data['sale'] ?? 0,
+		text: $data['text'] ?? null,
+	)
+	$ids[$data['title']] = $category->id
+	static::translations('category_translation', 'category', $category->id, $data)
+	foreach ($data['children'] ?? [] AS $child) static::category($child, $category->id, $sort, $ids)
+}
+
+static translations($model, $key, $id, $data){
+	foreach (['fr', 'es', 'de'] AS $lang){
+		if (!isset($data[$lang])) continue
+		[$title, $uri] = $data[$lang]
+		$text = $data[$lang][2] ?? null
+		$model::change($key.'=? AND lang=?', $id, $lang, title: $title, uri: $uri, text: $text)
+	}
+}
+
+// The catalogue. Master texts are English; fr/es/de carry [title, uri, text].
+// hex drives the generated imagery, cats link into category_products.
+static productData = [
+	['title' => 'Ivory herringbone coutil', 'uri' => 'ivory-herringbone-coutil', 'sku' => 'LC-CTL-001', 'color' => 'ivory', 'material' => 'coutil', 'hex' => '#EAE3D2', 'cats' => ['Fabrics', 'Coutil'],
+		'text' => 'Tightly woven herringbone coutil that refuses to stretch. The foundation layer for any serious corset.',
+		'variants' => [['1 m', 24.5], ['3 m', 69.0], ['5 m', 109.0]],
+		'fr' => ['Coutil chevron ivoire', 'coutil-chevron-ivoire', 'Un coutil chevron tissé serré qui refuse de se détendre. La couche de base de tout corset sérieux.'],
+		'es' => ['Cutí de espiga marfil', 'cuti-de-espiga-marfil', 'Cutí de espiga de tejido prieto que no cede. La capa de base de cualquier corsé serio.'],
+		'de' => ['Elfenbein Fischgrat-Coutil', 'elfenbein-fischgrat-coutil', 'Dicht gewebter Fischgrat-Coutil, der nicht nachgibt. Die Basis für jedes ernsthafte Korsett.']],
+	['title' => 'Black satin coutil', 'uri' => 'black-satin-coutil', 'sku' => 'LC-CTL-002', 'color' => 'black', 'material' => 'coutil', 'hex' => '#2B2B30', 'cats' => ['Fabrics', 'Coutil'],
+		'text' => 'Satin-faced coutil with a deep black sheen. Strength on the inside, evening wear on the outside.',
+		'variants' => [['1 m', 29.5], ['3 m', 84.0]],
+		'fr' => ['Coutil satin noir', 'coutil-satin-noir', 'Coutil à face satinée d\'un noir profond. La solidité à l\'intérieur, la tenue de soirée à l\'extérieur.'],
+		'es' => ['Cutí satinado negro', 'cuti-satinado-negro', 'Cutí con cara de satén de un negro profundo. Resistencia por dentro, traje de noche por fuera.'],
+		'de' => ['Schwarzer Satin-Coutil', 'schwarzer-satin-coutil', 'Coutil mit Satinseite in tiefem Schwarz. Innen Stärke, außen Abendgarderobe.']],
+	['title' => 'Ruby silk duchesse', 'uri' => 'ruby-silk-duchesse', 'sku' => 'LC-SLK-001', 'color' => 'red', 'material' => 'silk', 'hex' => '#7C1F2E', 'cats' => ['Fabrics', 'Silk satin'],
+		'text' => 'Heavy Italian silk duchesse in a deep ruby. Drapes like liquid and covers a corset like nothing else.',
+		'variants' => [['0.5 m', 39.0], ['1 m', 74.0], ['3 m', 199.0]],
+		'fr' => ['Duchesse de soie rubis', 'duchesse-de-soie-rubis', 'Duchesse de soie italienne lourde d\'un rubis profond. Tombe comme un liquide et habille un corset comme rien d\'autre.'],
+		'es' => ['Duquesa de seda rubí', 'duquesa-de-seda-rubi', 'Duquesa de seda italiana pesada en un rubí profundo. Cae como un líquido y viste un corsé como ninguna otra tela.'],
+		'de' => ['Rubinrote Seidenduchesse', 'rubinrote-seidenduchesse', 'Schwere italienische Seidenduchesse in tiefem Rubinrot. Fällt wie Flüssigkeit und kleidet ein Korsett wie nichts anderes.']],
+	['title' => 'Midnight silk duchesse', 'uri' => 'midnight-silk-duchesse', 'sku' => 'LC-SLK-002', 'color' => 'blue', 'material' => 'silk', 'hex' => '#1D2A4A', 'cats' => ['Fabrics', 'Silk satin'],
+		'text' => 'The same heavy duchesse in a midnight blue that reads almost black by candlelight.',
+		'variants' => [['0.5 m', 39.0], ['1 m', 74.0]],
+		'fr' => ['Duchesse de soie minuit', 'duchesse-de-soie-minuit', 'La même duchesse lourde dans un bleu minuit qui paraît presque noir à la lueur des bougies.'],
+		'es' => ['Duquesa de seda medianoche', 'duquesa-de-seda-medianoche', 'La misma duquesa pesada en un azul medianoche que parece casi negro a la luz de las velas.'],
+		'de' => ['Mitternachtsblaue Seidenduchesse', 'mitternachtsblaue-seidenduchesse', 'Dieselbe schwere Duchesse in einem Mitternachtsblau, das bei Kerzenlicht fast schwarz wirkt.']],
+	['title' => 'Spiral steel boning 5 mm', 'uri' => 'spiral-steel-boning-5-mm', 'sku' => 'LC-BON-001', 'color' => 'silver', 'material' => 'steel', 'hex' => '#9FA6AD', 'cats' => ['Boning', 'Spiral steel'],
+		'text' => 'Pack of ten spiral steel bones, 5 mm wide, tipped and ready. Flexes in two directions for curved seams.',
+		'variants' => [['20 cm', 8.5], ['25 cm', 9.5], ['30 cm', 10.5]],
+		'fr' => ['Baleines spiralées 5 mm', 'baleines-spiralees-5-mm', 'Paquet de dix baleines spiralées de 5 mm, embouts posés. Flexibles dans deux directions pour les coutures galbées.'],
+		'es' => ['Ballenas de espiral 5 mm', 'ballenas-de-espiral-5-mm', 'Paquete de diez ballenas de acero en espiral de 5 mm, con puntas listas. Flexibles en dos direcciones para costuras curvas.'],
+		'de' => ['Spiralstäbchen 5 mm', 'spiralstaebchen-5-mm', 'Zehnerpack Spiralstäbchen, 5 mm breit, mit Kappen. Flexibel in zwei Richtungen für geschwungene Nähte.']],
+	['title' => 'Flat steel boning 7 mm', 'uri' => 'flat-steel-boning-7-mm', 'sku' => 'LC-BON-002', 'color' => 'silver', 'material' => 'steel', 'hex' => '#8C949C', 'cats' => ['Boning', 'Flat steel'],
+		'text' => 'Rigid flat steel for the centre back and lacing panels. Galvanised, rust-treated, uncompromising.',
+		'variants' => [['25 cm', 7.5], ['30 cm', 8.5], ['35 cm', 9.5]],
+		'fr' => ['Baleines plates 7 mm', 'baleines-plates-7-mm', 'Acier plat rigide pour le milieu dos et les panneaux de laçage. Galvanisé, traité antirouille, sans compromis.'],
+		'es' => ['Ballenas planas 7 mm', 'ballenas-planas-7-mm', 'Acero plano rígido para el centro de la espalda y los paneles de lazada. Galvanizado, tratado contra el óxido, sin concesiones.'],
+		'de' => ['Flachstäbchen 7 mm', 'flachstaebchen-7-mm', 'Starrer Flachstahl für die hintere Mitte und die Schnürpaneele. Verzinkt, rostgeschützt, kompromisslos.']],
+	['title' => 'Straight corset busk', 'uri' => 'straight-corset-busk', 'sku' => 'LC-CLS-001', 'color' => 'silver', 'material' => 'steel', 'hex' => '#B3B9BF', 'cats' => ['Closures'],
+		'text' => 'Classic straight front busk with five loops and studs. The fastest way in and out of a corset.',
+		'variants' => [['25 cm', 12.5], ['30 cm', 14.0], ['35 cm', 15.5]],
+		'fr' => ['Busc droit', 'busc-droit', 'Busc avant droit classique à cinq boucles et boutons. La façon la plus rapide d\'entrer et de sortir d\'un corset.'],
+		'es' => ['Busk recto', 'busk-recto', 'Busk delantero recto clásico con cinco presillas y botones. La forma más rápida de ponerse y quitarse un corsé.'],
+		'de' => ['Gerades Planchet', 'gerades-planchet', 'Klassisches gerades Planchet mit fünf Ösen und Knöpfen. Der schnellste Weg in ein Korsett hinein und heraus.']],
+	['title' => 'Antique bronze eyelets', 'uri' => 'antique-bronze-eyelets', 'sku' => 'LC-CLS-002', 'color' => 'bronze', 'material' => 'brass', 'hex' => '#7A5A36', 'cats' => ['Closures'],
+		'text' => 'Two-part brass eyelets with washers, finished in antique bronze. Set of fifty or a hundred.',
+		'variants' => [['50 pcs', 9.0], ['100 pcs', 16.0]],
+		'fr' => ['Œillets bronze antique', 'oeillets-bronze-antique', 'Œillets en laiton deux pièces avec rondelles, finition bronze antique. Jeu de cinquante ou de cent.'],
+		'es' => ['Ojales de bronce antiguo', 'ojales-de-bronce-antiguo', 'Ojales de latón de dos piezas con arandelas, acabado en bronce antiguo. Juego de cincuenta o cien.'],
+		'de' => ['Antikbronze-Ösen', 'antikbronze-oesen', 'Zweiteilige Messingösen mit Unterlegscheiben in Antikbronze. Set mit fünfzig oder hundert Stück.']],
+	['title' => 'Black satin lacing 5 m', 'uri' => 'black-satin-lacing-5-m', 'sku' => 'LC-HAB-001', 'color' => 'black', 'material' => 'satin', 'hex' => '#26262B', 'cats' => ['Haberdashery'],
+		'text' => 'Five metres of double-faced satin lacing that glides through eyelets and holds a bow beautifully.',
+		'variants' => [['5 m', 6.5]],
+		'fr' => ['Lacet satin noir 5 m', 'lacet-satin-noir-5-m', 'Cinq mètres de lacet satin double face qui glisse dans les œillets et tient joliment le nœud.'],
+		'es' => ['Cordón de satén negro 5 m', 'cordon-de-saten-negro-5-m', 'Cinco metros de cordón de satén de doble cara que se desliza por los ojales y sostiene el lazo con elegancia.'],
+		'de' => ['Schwarze Satinschnürung 5 m', 'schwarze-satinschnuerung-5-m', 'Fünf Meter doppelseitige Satinschnürung, die durch die Ösen gleitet und eine schöne Schleife hält.']],
+	['title' => 'Gold embroidery silk', 'uri' => 'gold-embroidery-silk', 'sku' => 'LC-HAB-002', 'color' => 'gold', 'material' => 'silk', 'hex' => '#A8842C', 'cats' => ['Haberdashery'],
+		'text' => 'Pure silk embroidery thread in old gold, spun for flossing the bone channels of a fine corset.',
+		'variants' => [['10 m', 4.5], ['50 m', 18.0]],
+		'fr' => ['Soie à broder or', 'soie-a-broder-or', 'Fil de soie pure à broder en vieil or, filé pour le flossing des coulisses de baleines d\'un beau corset.'],
+		'es' => ['Seda de bordar oro', 'seda-de-bordar-oro', 'Hilo de bordar de pura seda en oro viejo, hilado para el flossing de los canales de ballenas de un buen corsé.'],
+		'de' => ['Goldene Stickseide', 'goldene-stickseide', 'Stickgarn aus reiner Seide in Altgold, gesponnen für das Flossing der Stäbchenkanäle eines feinen Korsetts.']],
+	['title' => 'Nude waist tape 2.5 cm', 'uri' => 'nude-waist-tape-2-5-cm', 'sku' => 'LC-HAB-003', 'color' => 'nude', 'material' => 'cotton', 'hex' => '#C9AE93', 'cats' => ['Haberdashery'],
+		'text' => 'Firm cotton waist tape that anchors the waistline and takes the strain off the fashion fabric.',
+		'variants' => [['2 m', 5.0], ['5 m', 11.0]],
+		'fr' => ['Ruban de taille nude 2,5 cm', 'ruban-de-taille-nude-2-5-cm', 'Ruban de taille en coton ferme qui ancre la ligne de taille et soulage le tissu de mode.'],
+		'es' => ['Cinta de cintura nude 2,5 cm', 'cinta-de-cintura-nude-2-5-cm', 'Cinta de cintura de algodón firme que ancla la línea de la cintura y descarga la tela exterior.'],
+		'de' => ['Taillenband Nude 2,5 cm', 'taillenband-nude-2-5-cm', 'Festes Baumwoll-Taillenband, das die Taille verankert und den Oberstoff entlastet.']],
+	['title' => 'Black bone casing tape', 'uri' => 'black-bone-casing-tape', 'sku' => 'LC-HAB-004', 'color' => 'black', 'material' => 'cotton', 'hex' => '#33333A', 'cats' => ['Haberdashery'],
+		'text' => 'Woven cotton casing tape that wraps steel bones in a clean channel, ready to stitch down.',
+		'variants' => [['3 m', 6.0], ['10 m', 17.5]],
+		'fr' => ['Ruban passe-baleine noir', 'ruban-passe-baleine-noir', 'Ruban de coton tissé qui gaine les baleines d\'acier dans une coulisse nette, prête à piquer.'],
+		'es' => ['Cinta para ballenas negra', 'cinta-para-ballenas-negra', 'Cinta de algodón tejida que envuelve las ballenas de acero en un canal limpio, lista para coser.'],
+		'de' => ['Schwarzes Stäbchenband', 'schwarzes-staebchenband', 'Gewebtes Baumwollband, das Stahlstäbchen in einen sauberen Kanal hüllt, bereit zum Aufnähen.']],
+	['title' => 'Ivory lace trim', 'uri' => 'ivory-lace-trim', 'sku' => 'LC-HAB-005', 'color' => 'ivory', 'material' => 'lace', 'hex' => '#DCD2BC', 'cats' => ['Haberdashery'],
+		'text' => 'Fine cotton lace trim with a scalloped edge, the finishing touch along a corset top line.',
+		'variants' => [['2 m', 8.0], ['5 m', 17.0]],
+		'fr' => ['Galon de dentelle ivoire', 'galon-de-dentelle-ivoire', 'Fin galon de dentelle de coton à bord festonné, la touche finale le long du bord d\'un corset.'],
+		'es' => ['Puntilla de encaje marfil', 'puntilla-de-encaje-marfil', 'Fina puntilla de encaje de algodón con borde festoneado, el toque final del borde superior de un corsé.'],
+		'de' => ['Elfenbein-Spitzenborte', 'elfenbein-spitzenborte', 'Feine Baumwollspitze mit Bogenkante, der letzte Schliff an der Oberkante eines Korsetts.']],
+	['title' => 'Victorian corset pattern', 'uri' => 'victorian-corset-pattern', 'sku' => 'LC-SAL-001', 'color' => 'white', 'material' => 'paper', 'hex' => '#8E8B84', 'cats' => ['Sale'],
+		'text' => 'A graded paper pattern for an hourglass Victorian corset, drafted from an 1880s original.',
+		'variants' => [['S', 9.5, 19.0], ['M', 9.5, 19.0], ['L', 9.5, 19.0]],
+		'fr' => ['Patron de corset victorien', 'patron-de-corset-victorien', 'Patron papier gradué pour un corset victorien sablier, tracé d\'après un original des années 1880.'],
+		'es' => ['Patrón de corsé victoriano', 'patron-de-corse-victoriano', 'Patrón de papel escalado para un corsé victoriano de reloj de arena, trazado a partir de un original de 1880.'],
+		'de' => ['Viktorianisches Korsett-Schnittmuster', 'viktorianisches-korsett-schnittmuster', 'Gradiertes Papierschnittmuster für ein viktorianisches Sanduhr-Korsett, gezeichnet nach einem Original aus den 1880ern.']],
+	['title' => 'Corsetry starter kit', 'uri' => 'corsetry-starter-kit', 'sku' => 'LC-SAL-002', 'color' => 'gold', 'material' => 'mixed', 'hex' => '#6E5A2E', 'cats' => ['Sale'],
+		'text' => 'Everything for a first corset in one box: coutil, boning, busk, eyelets and lacing.',
+		'variants' => [['One size', 59.0, 79.0]],
+		'fr' => ['Kit de corsetterie débutant', 'kit-de-corsetterie-debutant', 'Tout pour un premier corset dans une boîte : coutil, baleines, busc, œillets et lacet.'],
+		'es' => ['Kit de iniciación a la corsetería', 'kit-de-iniciacion-a-la-corseteria', 'Todo para un primer corsé en una caja: cutí, ballenas, busk, ojales y cordón.'],
+		'de' => ['Korsett-Starterset', 'korsett-starterset', 'Alles für ein erstes Korsett in einer Box: Coutil, Stäbchen, Planchet, Ösen und Schnürung.']],
+]
+
+static products($categoryIds){
+	$db = %SQLite(data.'shop.db')
+	$now = time()
+	foreach (static::$productData AS $index => $data){
+		$product = product::create (
+			sku: $data['sku'],
+			uri: $data['uri'],
+			title: $data['title'],
+			text: $data['text'],
+			color: $data['color'],
+			material: $data['material'],
+			active: 1,
+			created: $now - (count(static::$productData) - $index) * 86400 * 9 - between(0, 80000),
+		)
+		static::translations('product_translation', 'product', $product->id, $data)
+		foreach ($data['cats'] AS $cat) isset($categoryIds[$cat]) && $db->create('category_products', category: $categoryIds[$cat], product: $product->id)
+		foreach ($data['variants'] AS $n => $v){
+			$variant = variant::create (
+				product: $product->id,
+				sku: $data['sku'].dash.($n + 1),
+				size: $v[0],
+				remarks: void,
+				priceCost: round($v[1] * 0.45, 2),
+				priceOld: $v[2] ?? 0,
+				price: $v[1],
+				active: 1,
+			)
+			variant_stock::create(variant: $variant->id, location: 'Warehouse', level: between(0, 24))
+			chance(40) && variant_stock::create(variant: $variant->id, location: 'Atelier', level: between(0, 6))
+		}
+		foreach ([1, 2] AS $sort){
+			$token = token(20)
+			static::productImage($data['title'], $data['hex'], $token, $sort - 1)
+			product_image::create(product: $product->id, sort: $sort, name: $data['uri'].dash.$sort.'.png', name_token: $token)
+		}
+	}
+}
+
+static customers = [
+	['Amelie', 'Laurent', 'Paris', 'France'],
+	['Beatriz', 'Moreno', 'Madrid', 'Spain'],
+	['Charlotte', 'Weber', 'Berlin', 'Germany'],
+	['Daan', 'Visser', 'Amsterdam', 'Netherlands'],
+	['Eleanor', 'Hartley', 'London', 'United Kingdom'],
+	['Franca', 'Ricci', 'Milan', 'Italy'],
+	['Greta', 'Lindqvist', 'Stockholm', 'Sweden'],
+	['Henri', 'Dubois', 'Lyon', 'France'],
+	['Isabel', 'Costa', 'Lisbon', 'Portugal'],
+	['Jonas', 'Keller', 'Vienna', 'Austria'],
+	['Katarzyna', 'Nowak', 'Krakow', 'Poland'],
+	['Lucia', 'Fernandez', 'Valencia', 'Spain'],
+]
+
+static orders {
+	$variants = variant::records()
+	$start = time() - 365 * 86400
+	while (($start += between(3600 * 30, 3600 * 240)) < time()){
+		$who = randItem(static::$customers)
+		$age = time() - $start
+		$status = $age > 86400 * 21 ? 'completed' : randItem(['new', 'paid', 'paid', 'sent'])
+		$order = order::create (
+			firstName: $who[0],
+			lastName: $who[1],
+			email: strtolower($who[0].dot.$who[1]).'@example.com',
+			phone: chance(40) ? '+31 6 '.between(10000000, 99999999) : void,
+			street: 'Demo Street',
+			housenumber: (string)between(1, 240),
+			zip: between(10000, 99999),
+			city: $who[2],
+			country: $who[3],
+			status: $status,
+			comment: chance(12) ? 'Please wrap as a gift.' : void,
+			total: 0,
+			shipping: chance(80) ? 'Standard (2-3 working days)' : 'Express (1 working day)',
+			paymentMethod: randItem(['iDEAL', 'iDEAL', 'Creditcard', 'PayPal']),
+			created: $start,
+		)
+		$total = 4.95
+		foreach (randItem($variants, between(1, 3)) AS $variant){
+			$qty = randItem([1, 1, 1, 2])
+			$total += $qty * $variant->price
+			$product = product::record(id: $variant->productId)
+			order_variant::create (
+				orderId: $order,
+				variant: $variant,
+				title: $product?->title,
+				quantity: $qty,
+				price: $variant->price,
+			)
+		}
+		order::change('id=?', $order->id, total: round($total, 2))
+	}
+}
+
+function chance(int $percentage) => mt_rand(1, 100) <= $percentage
+function between(int $min, int $max) => mt_rand($min, $max)
+function randItem(array $items, $amount = null){
+	if ($amount === null) return $items[array_rand($items)]
+	if ($amount === 1) return [$key = array_rand($items) => $items[$key]]
+	return array_intersect_key($items, array_flip(array_rand($items, min($amount, count($items)))))
+}
+
+// ---- Product imagery: an elegant monogram card per product, plus a hover variant ----
+
+static fontSerif => is_file($f = '/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf') ? $f : null
+static fontSans => is_file($f = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf') ? $f : null
+
+static color($im, $hex){
+	$hex = ltrim($hex, '#')
+	return imagecolorallocate($im, hexdec(substr($hex, 0, 2)), hexdec(substr($hex, 2, 2)), hexdec(substr($hex, 4, 2)))
+}
+
+static shade($hex, $factor){
+	$hex = ltrim($hex, '#')
+	$rgb = [hexdec(substr($hex, 0, 2)), hexdec(substr($hex, 2, 2)), hexdec(substr($hex, 4, 2))]
+	return loop($rgb, fn($c) => max(0, min(255, (int)round($c * $factor))))
+}
+
+static saveImage($im, $dir, $token){
+	$sub = $dir.substr($token, 0, 2)
+	is_dir($sub) || mkdir($sub, 0775, true)
+	ob_start()
+	imagepng($im, null, 8)
+	$data = ob_get_clean()
+	file_put_contents($sub.slash.substr($token, 2).'.png', $data)
+}
+
+static wrap($font, $size, $text, $maxWidth){
+	if (!$font) return [$text]
+	$lines = []
+	$line = void
+	foreach (explode(space, $text) AS $word){
+		$try = $line === void ? $word : $line.space.$word
+		$box = imagettfbbox($size, 0, $font, $try)
+		if ($box[2] - $box[0] > $maxWidth && $line !== void){
+			$lines[] = $line
+			$line = $word
+		}
+		else $line = $try
+	}
+	$line === void || $lines[] = $line
+	return $lines
+}
+
+static centered($im, $font, $size, $y, $text, $color, $width = 800){
+	if (!$font) return imagestring($im, 4, (int)(($width - strlen($text) * 8) / 2), $y - 10, $text, $color)
+	$box = imagettfbbox($size, 0, $font, $text)
+	imagettftext($im, $size, 0, (int)(($width - ($box[2] - $box[0])) / 2), $y, $color, $font, $text)
+}
+
+static productImage($title, $hex, $token, $variant = 0){
+	$w = 800
+	$h = 1000
+	$im = imagecreatetruecolor($w, $h)
+	$top = static::shade($hex, $variant ? 0.82 : 1.12)
+	$bottom = static::shade($hex, $variant ? 0.38 : 0.62)
+	foreach (range(0, $h - 1) AS $y){
+		$mix = $y / $h
+		$color = imagecolorallocate($im, (int)($top[0] + ($bottom[0] - $top[0]) * $mix), (int)($top[1] + ($bottom[1] - $top[1]) * $mix), (int)($top[2] + ($bottom[2] - $top[2]) * $mix))
+		imageline($im, 0, $y, $w, $y, $color)
+	}
+	$gold = imagecolorallocate($im, 176, 141, 38)
+	$soft = imagecolorallocatealpha($im, 255, 255, 255, 70)
+	$ink = imagecolorallocatealpha($im, 255, 255, 255, 25)
+	imagerectangle($im, 26, 26, $w - 27, $h - 27, $gold)
+	imagerectangle($im, 34, 34, $w - 35, $h - 35, $soft)
+	$serif = static::fontSerif()
+	$sans = static::fontSans()
+	static::centered($im, $sans, 15, 110, strtoupper('L\'Atelier Corseterie'), $soft, $w)
+	imageline($im, 340, 135, $w - 340, 135, $gold)
+	static::centered($im, $serif, 260, 620, strtoupper(substr($title, 0, 1)), $ink, $w)
+	$y = 850
+	foreach (static::wrap($sans, 22, strtoupper($title), 620) AS $line){
+		static::centered($im, $sans, 22, $y, $line, $soft, $w)
+		$y += 38
+	}
+	imageline($im, 360, $y + 4, $w - 360, $y + 4, $gold)
+	static::saveImage($im, images, $token)
+	$tw = 480
+	$th = 600
+	$tn = imagecreatetruecolor($tw, $th)
+	imagecopyresampled($tn, $im, 0, 0, 0, 0, $tw, $th, $w, $h)
+	static::saveImage($tn, thumbs, $token)
+}
+
+// ---- Interface translations: written to langs/<lang>.ini so the shop is fully ----
+// ---- translated out of the box, without needing an OpenAI key.               ----
+
+static langs {
+	foreach (static::uiStrings() AS $lang => $pairs){
+		$hashed = []
+		foreach ($pairs AS $source => $translation) $hashed[%lang->hash('en', $source)] = $translation
+		%lang->save($lang, $hashed)
+	}
+	return true
+}
+
+static uiStrings => arr (
+	fr: [
+		'Menu' => 'Menu',
+		'SHOP' => 'BOUTIQUE',
+		'All products' => 'Tous les produits',
+		'INSPIRATION' => 'INSPIRATION',
+		'Tutorials' => 'Tutoriels',
+		'Materials' => 'Matières',
+		'ABOUT' => 'À PROPOS',
+		'About the atelier' => "À propos de l'atelier",
+		'Contact' => 'Contact',
+		'Shopping cart' => 'Panier',
+		'Close menu' => 'Fermer le menu',
+		'Fine corsetry supplies.' => 'Fournitures fines de corsetterie.',
+		'Demo webshop built with' => 'Boutique de démonstration construite avec',
+		'The Art of the Corset' => "L'Art du Corset",
+		'Exclusive materials for the modern couturier.' => 'Des matières exclusives pour le couturier moderne.',
+		"Welcome to L'Atelier de Corseterie. Discover our wonderful collection." => "Bienvenue à L'Atelier de Corseterie. Découvrez notre magnifique collection.",
+		'Browse the full collection' => 'Parcourir toute la collection',
+		'Category' => 'Catégorie',
+		'Colour' => 'Couleur',
+		'Material' => 'Matière',
+		'From' => 'À partir de',
+		'View product' => 'Voir le produit',
+		'Supplies' => 'Fournitures',
+		'Collection' => 'Collection',
+		'Back to overview' => "Retour à l'aperçu",
+		'Specifications' => 'Caractéristiques',
+		'Choose a variant' => 'Choisissez une variante',
+		'Low stock' => 'Stock limité',
+		'Add to cart' => 'Ajouter au panier',
+		'Added to cart' => 'Ajouté au panier',
+		'Choose what you would like to do next.' => 'Choisissez ce que vous souhaitez faire ensuite.',
+		'Continue shopping' => 'Continuer vos achats',
+		'Checkout' => 'Paiement',
+		'Close' => 'Fermer',
+		'You may also like' => 'Vous aimerez peut-être aussi',
+		'Your cart' => 'Votre panier',
+		'Your cart is empty.' => 'Votre panier est vide.',
+		'Less' => 'Moins',
+		'More' => 'Plus',
+		'Remove' => 'Supprimer',
+		'Summary' => 'Récapitulatif',
+		'Subtotal' => 'Sous-total',
+		'Shipping' => 'Livraison',
+		'Total' => 'Total',
+		'Pay securely with' => 'Payez en toute sécurité avec',
+		'Back to cart' => 'Retour au panier',
+		'Your details' => 'Vos coordonnées',
+		'First name' => 'Prénom',
+		'Last name' => 'Nom',
+		'Email' => 'E-mail',
+		'Phone' => 'Téléphone',
+		'Delivery address' => 'Adresse de livraison',
+		'Street + number' => 'Rue + numéro',
+		'Postal code' => 'Code postal',
+		'City' => 'Ville',
+		'Country' => 'Pays',
+		'Standard (2-3 working days)' => 'Standard (2-3 jours ouvrés)',
+		'Standard shipping (2-3 working days)' => 'Livraison standard (2-3 jours ouvrés)',
+		'Express (1 working day)' => 'Express (1 jour ouvré)',
+		'Payment method' => 'Mode de paiement',
+		'Remarks' => 'Remarques',
+		'E.g. delivery instructions or sizing advice' => 'Par ex. instructions de livraison ou conseils de taille',
+		'Place order' => 'Passer la commande',
+		'By placing an order you agree to our terms. This is a demo: nothing is shipped and nothing is charged.' => "En passant commande, vous acceptez nos conditions. Ceci est une démo : rien n'est expédié et rien n'est débité.",
+		'Order placed' => 'Commande passée',
+		'Thank you. We will get to work on your order right away.' => 'Merci. Nous nous mettons au travail immédiatement.',
+		'Confirmation' => 'Confirmation',
+		'Order number:' => 'Numéro de commande :',
+		'This is a demo shop: no email is sent and no payment is processed. The order is stored for real though, and shows up in the admin.' => "Ceci est une boutique de démonstration : aucun e-mail n'est envoyé et aucun paiement n'est traité. La commande est cependant réellement enregistrée et apparaît dans l'admin.",
+		'Shipping:' => 'Livraison :',
+		'Payment method:' => 'Mode de paiement :',
+		'Remarks:' => 'Remarques :',
+		'Questions? Get in touch' => 'Des questions ? Contactez-nous',
+		'About us' => 'À propos de nous',
+		'About the Atelier' => "À propos de l'Atelier",
+		'Devoted to craftsmanship.' => "Dévoué à l'artisanat.",
+		"'Atelier Corseterie grew out of a deep-rooted passion for historical silhouettes and the techniques that make them possible. What began as a personal search for authentic materials has grown into a specialised supplier for couturiers and costume makers across Europe." => "'Atelier Corseterie est né d'une passion profonde pour les silhouettes historiques et les techniques qui les rendent possibles. Ce qui a commencé comme une quête personnelle de matières authentiques est devenu un fournisseur spécialisé pour les couturiers et costumiers de toute l'Europe.",
+		'We believe the quality of the finished piece is decided by the quality of the raw materials. A corset is a structural garment; it lives under high tension. That is why we make no concessions on quality. Our boning comes from specialised metalworkers in Germany, our coutil from England and our silk from the finest mills of Italy.' => "Nous croyons que la qualité de la pièce finie dépend de la qualité des matières premières. Un corset est un vêtement structurel ; il vit sous haute tension. C'est pourquoi nous ne faisons aucune concession sur la qualité. Nos baleines viennent de métallurgistes spécialisés en Allemagne, notre coutil d'Angleterre et notre soie des meilleures filatures d'Italie.",
+		'Whether you are building a historically accurate Victorian corset or a modern couture piece, we supply the building blocks for your vision.' => 'Que vous réalisiez un corset victorien historiquement fidèle ou une pièce de couture moderne, nous fournissons les éléments de votre vision.',
+		'Discover our collection' => 'Découvrez notre collection',
+		'Customer service' => 'Service client',
+		'Questions about a product, advice on boning sizes, or questions about your order?' => 'Des questions sur un produit, des conseils sur les tailles de baleines ou des questions sur votre commande ?',
+		'Visiting address' => 'Adresse de visite',
+		'Our atelier can be visited by appointment to collect orders.' => 'Notre atelier se visite sur rendez-vous pour retirer les commandes.',
+		'The Netherlands' => 'Pays-Bas',
+		'Send us a message' => 'Envoyez-nous un message',
+		'Name' => 'Nom',
+		'Your message' => 'Votre message',
+		'Send' => 'Envoyer',
+		'We are here for you.' => 'Nous sommes là pour vous.',
+		'Exclusive Materials' => 'Matières Exclusives',
+		'The foundation of every masterpiece starts here.' => "La fondation de chaque chef-d'œuvre commence ici.",
+		'Our Collection' => 'Notre Collection',
+		'The backbone of every corset. Our coutil is woven specifically not to stretch, which is essential for the structure and shaping of the garment. Available in traditional herringbone and satin finish.' => 'La colonne vertébrale de chaque corset. Notre coutil est tissé spécifiquement pour ne pas se détendre, ce qui est essentiel pour la structure et le galbe du vêtement. Disponible en chevron traditionnel et en finition satinée.',
+		'Silk satin' => 'Satin de soie',
+		'Our Italian silk satin (Duchesse) is of heavy quality, perfect for covering corsets. Its rich sheen gives an unmatched luxurious look that synthetic fabrics simply cannot rival.' => "Notre satin de soie italien (Duchesse) est d'une qualité lourde, parfait pour recouvrir les corsets. Son éclat riche donne un luxe inégalé que les tissus synthétiques ne peuvent égaler.",
+		'Boning' => 'Baleines',
+		'We carry both spiral steel for curved seams and flat steel for the back closure. All our steel is galvanised and rust-treated, suitable for intensive use.' => "Nous proposons de l'acier spiralé pour les coutures galbées et de l'acier plat pour le laçage dos. Tout notre acier est galvanisé et traité antirouille, adapté à un usage intensif.",
+		'View in shop' => 'Voir dans la boutique',
+		'Masterclasses' => 'Masterclasses',
+		'The art of making.' => "L'art de faire.",
+		'Coming soon' => 'Bientôt disponible',
+		'Our master corset makers are working on a series of in-depth video tutorials. From inserting a busk to perfect finishing with flossing.' => "Nos maîtres corsetiers travaillent sur une série de tutoriels vidéo approfondis. De la pose d'un busc à la finition parfaite au flossing.",
+		'Stay up to date' => 'Restez informé',
+		'Sign up for our newsletter and be the first to get access.' => 'Inscrivez-vous à notre newsletter et soyez les premiers à y accéder.',
+		'Your email address' => 'Votre adresse e-mail',
+		'Subscribe' => "S'inscrire",
+		'Page not found' => 'Page introuvable',
+		'Error 404: this page does not exist (anymore)' => "Erreur 404 : cette page n'existe pas (ou plus)",
+		'Sorry, this page does not exist! Return to the <a href="/" class="async">home page</a> or browse our collection to find the right product!' => 'Désolé, cette page n\'existe pas ! Retournez à la <a href="/" class="async">page d\'accueil</a> ou parcourez notre collection pour trouver le bon produit !',
+		'Administration' => 'Administration',
+		'The admin of this demo is a Phlo CMS and runs on its own address.' => "L'admin de cette démo est un Phlo CMS et tourne sur sa propre adresse.",
+		'Open the admin' => "Ouvrir l'admin",
+		'black' => 'noir',
+		'white' => 'blanc',
+		'red' => 'rouge',
+		'blue' => 'bleu',
+		'gold' => 'or',
+		'silver' => 'argent',
+		'bronze' => 'bronze',
+		'pink' => 'rose',
+		'nude' => 'nude',
+		'ivory' => 'ivoire',
+		'green' => 'vert',
+		'purple' => 'violet',
+		'coutil' => 'coutil',
+		'silk' => 'soie',
+		'steel' => 'acier',
+		'brass' => 'laiton',
+		'cotton' => 'coton',
+		'satin' => 'satin',
+		'lace' => 'dentelle',
+		'paper' => 'papier',
+		'mixed' => 'assortiment',
+	],
+	es: [
+		'Menu' => 'Menú',
+		'SHOP' => 'TIENDA',
+		'All products' => 'Todos los productos',
+		'INSPIRATION' => 'INSPIRACIÓN',
+		'Tutorials' => 'Tutoriales',
+		'Materials' => 'Materiales',
+		'ABOUT' => 'NOSOTROS',
+		'About the atelier' => 'Sobre el atelier',
+		'Contact' => 'Contacto',
+		'Shopping cart' => 'Cesta',
+		'Close menu' => 'Cerrar menú',
+		'Fine corsetry supplies.' => 'Finas fornituras de corsetería.',
+		'Demo webshop built with' => 'Tienda de demostración construida con',
+		'The Art of the Corset' => 'El Arte del Corsé',
+		'Exclusive materials for the modern couturier.' => 'Materiales exclusivos para el modisto moderno.',
+		"Welcome to L'Atelier de Corseterie. Discover our wonderful collection." => "Bienvenido a L'Atelier de Corseterie. Descubra nuestra magnífica colección.",
+		'Browse the full collection' => 'Ver toda la colección',
+		'Category' => 'Categoría',
+		'Colour' => 'Color',
+		'Material' => 'Material',
+		'From' => 'Desde',
+		'View product' => 'Ver producto',
+		'Supplies' => 'Fornituras',
+		'Collection' => 'Colección',
+		'Back to overview' => 'Volver al resumen',
+		'Specifications' => 'Especificaciones',
+		'Choose a variant' => 'Elija una variante',
+		'Low stock' => 'Pocas existencias',
+		'Add to cart' => 'Añadir a la cesta',
+		'Added to cart' => 'Añadido a la cesta',
+		'Choose what you would like to do next.' => 'Elija qué desea hacer a continuación.',
+		'Continue shopping' => 'Seguir comprando',
+		'Checkout' => 'Pagar',
+		'Close' => 'Cerrar',
+		'You may also like' => 'También le puede gustar',
+		'Your cart' => 'Su cesta',
+		'Your cart is empty.' => 'Su cesta está vacía.',
+		'Less' => 'Menos',
+		'More' => 'Más',
+		'Remove' => 'Eliminar',
+		'Summary' => 'Resumen',
+		'Subtotal' => 'Subtotal',
+		'Shipping' => 'Envío',
+		'Total' => 'Total',
+		'Pay securely with' => 'Pague de forma segura con',
+		'Back to cart' => 'Volver a la cesta',
+		'Your details' => 'Sus datos',
+		'First name' => 'Nombre',
+		'Last name' => 'Apellidos',
+		'Email' => 'Correo electrónico',
+		'Phone' => 'Teléfono',
+		'Delivery address' => 'Dirección de entrega',
+		'Street + number' => 'Calle y número',
+		'Postal code' => 'Código postal',
+		'City' => 'Ciudad',
+		'Country' => 'País',
+		'Standard (2-3 working days)' => 'Estándar (2-3 días laborables)',
+		'Standard shipping (2-3 working days)' => 'Envío estándar (2-3 días laborables)',
+		'Express (1 working day)' => 'Exprés (1 día laborable)',
+		'Payment method' => 'Método de pago',
+		'Remarks' => 'Observaciones',
+		'E.g. delivery instructions or sizing advice' => 'P. ej. instrucciones de entrega o consejos de talla',
+		'Place order' => 'Realizar pedido',
+		'By placing an order you agree to our terms. This is a demo: nothing is shipped and nothing is charged.' => 'Al realizar un pedido acepta nuestras condiciones. Esto es una demo: no se envía ni se cobra nada.',
+		'Order placed' => 'Pedido realizado',
+		'Thank you. We will get to work on your order right away.' => 'Gracias. Nos ponemos a trabajar en su pedido de inmediato.',
+		'Confirmation' => 'Confirmación',
+		'Order number:' => 'Número de pedido:',
+		'This is a demo shop: no email is sent and no payment is processed. The order is stored for real though, and shows up in the admin.' => 'Esta es una tienda de demostración: no se envía ningún correo ni se procesa ningún pago. Sin embargo, el pedido se guarda de verdad y aparece en el admin.',
+		'Shipping:' => 'Envío:',
+		'Payment method:' => 'Método de pago:',
+		'Remarks:' => 'Observaciones:',
+		'Questions? Get in touch' => '¿Preguntas? Contáctenos',
+		'About us' => 'Sobre nosotros',
+		'About the Atelier' => 'Sobre el Atelier',
+		'Devoted to craftsmanship.' => 'Dedicados a la artesanía.',
+		"'Atelier Corseterie grew out of a deep-rooted passion for historical silhouettes and the techniques that make them possible. What began as a personal search for authentic materials has grown into a specialised supplier for couturiers and costume makers across Europe." => "'Atelier Corseterie nació de una profunda pasión por las siluetas históricas y las técnicas que las hacen posibles. Lo que empezó como una búsqueda personal de materiales auténticos se ha convertido en un proveedor especializado para modistos y sastres de vestuario de toda Europa.",
+		'We believe the quality of the finished piece is decided by the quality of the raw materials. A corset is a structural garment; it lives under high tension. That is why we make no concessions on quality. Our boning comes from specialised metalworkers in Germany, our coutil from England and our silk from the finest mills of Italy.' => 'Creemos que la calidad de la pieza terminada la decide la calidad de las materias primas. Un corsé es una prenda estructural; vive bajo alta tensión. Por eso no hacemos concesiones en la calidad. Nuestras ballenas proceden de metalúrgicos especializados de Alemania, nuestro cutí de Inglaterra y nuestra seda de las mejores hilanderías de Italia.',
+		'Whether you are building a historically accurate Victorian corset or a modern couture piece, we supply the building blocks for your vision.' => 'Tanto si construye un corsé victoriano históricamente fiel como una pieza de alta costura moderna, le proporcionamos los componentes para su visión.',
+		'Discover our collection' => 'Descubra nuestra colección',
+		'Customer service' => 'Atención al cliente',
+		'Questions about a product, advice on boning sizes, or questions about your order?' => '¿Preguntas sobre un producto, consejos sobre tamaños de ballenas o dudas sobre su pedido?',
+		'Visiting address' => 'Dirección de visita',
+		'Our atelier can be visited by appointment to collect orders.' => 'Nuestro atelier puede visitarse con cita previa para recoger pedidos.',
+		'The Netherlands' => 'Países Bajos',
+		'Send us a message' => 'Envíenos un mensaje',
+		'Name' => 'Nombre',
+		'Your message' => 'Su mensaje',
+		'Send' => 'Enviar',
+		'We are here for you.' => 'Estamos a su disposición.',
+		'Exclusive Materials' => 'Materiales Exclusivos',
+		'The foundation of every masterpiece starts here.' => 'La base de toda obra maestra empieza aquí.',
+		'Our Collection' => 'Nuestra Colección',
+		'The backbone of every corset. Our coutil is woven specifically not to stretch, which is essential for the structure and shaping of the garment. Available in traditional herringbone and satin finish.' => 'La columna vertebral de todo corsé. Nuestro cutí está tejido específicamente para no ceder, algo esencial para la estructura y el moldeado de la prenda. Disponible en espiga tradicional y acabado satinado.',
+		'Silk satin' => 'Satén de seda',
+		'Our Italian silk satin (Duchesse) is of heavy quality, perfect for covering corsets. Its rich sheen gives an unmatched luxurious look that synthetic fabrics simply cannot rival.' => 'Nuestro satén de seda italiano (Duchesse) es de calidad pesada, perfecto para forrar corsés. Su rico brillo aporta un lujo inigualable que los tejidos sintéticos no pueden igualar.',
+		'Boning' => 'Ballenas',
+		'We carry both spiral steel for curved seams and flat steel for the back closure. All our steel is galvanised and rust-treated, suitable for intensive use.' => 'Ofrecemos acero en espiral para las costuras curvas y acero plano para el cierre trasero. Todo nuestro acero está galvanizado y tratado contra el óxido, apto para un uso intensivo.',
+		'View in shop' => 'Ver en la tienda',
+		'Masterclasses' => 'Masterclasses',
+		'The art of making.' => 'El arte de hacer.',
+		'Coming soon' => 'Próximamente',
+		'Our master corset makers are working on a series of in-depth video tutorials. From inserting a busk to perfect finishing with flossing.' => 'Nuestros maestros corseteros están trabajando en una serie de tutoriales en vídeo. Desde insertar un busk hasta el acabado perfecto con flossing.',
+		'Stay up to date' => 'Manténgase informado',
+		'Sign up for our newsletter and be the first to get access.' => 'Suscríbase a nuestro boletín y sea el primero en acceder.',
+		'Your email address' => 'Su dirección de correo',
+		'Subscribe' => 'Suscribirse',
+		'Page not found' => 'Página no encontrada',
+		'Error 404: this page does not exist (anymore)' => 'Error 404: esta página ya no existe',
+		'Sorry, this page does not exist! Return to the <a href="/" class="async">home page</a> or browse our collection to find the right product!' => '¡Lo sentimos, esta página no existe! Vuelva a la <a href="/" class="async">página de inicio</a> o explore nuestra colección para encontrar el producto adecuado.',
+		'Administration' => 'Administración',
+		'The admin of this demo is a Phlo CMS and runs on its own address.' => 'El admin de esta demo es un Phlo CMS y funciona en su propia dirección.',
+		'Open the admin' => 'Abrir el admin',
+		'black' => 'negro',
+		'white' => 'blanco',
+		'red' => 'rojo',
+		'blue' => 'azul',
+		'gold' => 'oro',
+		'silver' => 'plata',
+		'bronze' => 'bronce',
+		'pink' => 'rosa',
+		'nude' => 'nude',
+		'ivory' => 'marfil',
+		'green' => 'verde',
+		'purple' => 'morado',
+		'coutil' => 'cutí',
+		'silk' => 'seda',
+		'steel' => 'acero',
+		'brass' => 'latón',
+		'cotton' => 'algodón',
+		'satin' => 'satén',
+		'lace' => 'encaje',
+		'paper' => 'papel',
+		'mixed' => 'surtido',
+	],
+	de: [
+		'Menu' => 'Menü',
+		'SHOP' => 'SHOP',
+		'All products' => 'Alle Produkte',
+		'INSPIRATION' => 'INSPIRATION',
+		'Tutorials' => 'Tutorials',
+		'Materials' => 'Materialien',
+		'ABOUT' => 'ÜBER UNS',
+		'About the atelier' => 'Über das Atelier',
+		'Contact' => 'Kontakt',
+		'Shopping cart' => 'Warenkorb',
+		'Close menu' => 'Menü schließen',
+		'Fine corsetry supplies.' => 'Feine Korsettmacher-Zutaten.',
+		'Demo webshop built with' => 'Demo-Webshop gebaut mit',
+		'The Art of the Corset' => 'Die Kunst des Korsetts',
+		'Exclusive materials for the modern couturier.' => 'Exklusive Materialien für den modernen Couturier.',
+		"Welcome to L'Atelier de Corseterie. Discover our wonderful collection." => "Willkommen bei L'Atelier de Corseterie. Entdecken Sie unsere wunderbare Kollektion.",
+		'Browse the full collection' => 'Zur gesamten Kollektion',
+		'Category' => 'Kategorie',
+		'Colour' => 'Farbe',
+		'Material' => 'Material',
+		'From' => 'Ab',
+		'View product' => 'Produkt ansehen',
+		'Supplies' => 'Zutaten',
+		'Collection' => 'Kollektion',
+		'Back to overview' => 'Zurück zur Übersicht',
+		'Specifications' => 'Spezifikationen',
+		'Choose a variant' => 'Variante wählen',
+		'Low stock' => 'Geringer Bestand',
+		'Add to cart' => 'In den Warenkorb',
+		'Added to cart' => 'Zum Warenkorb hinzugefügt',
+		'Choose what you would like to do next.' => 'Wählen Sie, wie es weitergehen soll.',
+		'Continue shopping' => 'Weiter einkaufen',
+		'Checkout' => 'Zur Kasse',
+		'Close' => 'Schließen',
+		'You may also like' => 'Das könnte Ihnen auch gefallen',
+		'Your cart' => 'Ihr Warenkorb',
+		'Your cart is empty.' => 'Ihr Warenkorb ist leer.',
+		'Less' => 'Weniger',
+		'More' => 'Mehr',
+		'Remove' => 'Entfernen',
+		'Summary' => 'Übersicht',
+		'Subtotal' => 'Zwischensumme',
+		'Shipping' => 'Versand',
+		'Total' => 'Gesamt',
+		'Pay securely with' => 'Sicher bezahlen mit',
+		'Back to cart' => 'Zurück zum Warenkorb',
+		'Your details' => 'Ihre Daten',
+		'First name' => 'Vorname',
+		'Last name' => 'Nachname',
+		'Email' => 'E-Mail',
+		'Phone' => 'Telefon',
+		'Delivery address' => 'Lieferadresse',
+		'Street + number' => 'Straße + Hausnummer',
+		'Postal code' => 'Postleitzahl',
+		'City' => 'Ort',
+		'Country' => 'Land',
+		'Standard (2-3 working days)' => 'Standard (2-3 Werktage)',
+		'Standard shipping (2-3 working days)' => 'Standardversand (2-3 Werktage)',
+		'Express (1 working day)' => 'Express (1 Werktag)',
+		'Payment method' => 'Zahlungsart',
+		'Remarks' => 'Anmerkungen',
+		'E.g. delivery instructions or sizing advice' => 'Z. B. Lieferhinweise oder Größenberatung',
+		'Place order' => 'Bestellung aufgeben',
+		'By placing an order you agree to our terms. This is a demo: nothing is shipped and nothing is charged.' => 'Mit Ihrer Bestellung akzeptieren Sie unsere Bedingungen. Dies ist eine Demo: Es wird nichts versendet und nichts abgebucht.',
+		'Order placed' => 'Bestellung aufgegeben',
+		'Thank you. We will get to work on your order right away.' => 'Vielen Dank. Wir machen uns sofort an die Arbeit.',
+		'Confirmation' => 'Bestätigung',
+		'Order number:' => 'Bestellnummer:',
+		'This is a demo shop: no email is sent and no payment is processed. The order is stored for real though, and shows up in the admin.' => 'Dies ist ein Demo-Shop: Es wird keine E-Mail versendet und keine Zahlung verarbeitet. Die Bestellung wird aber wirklich gespeichert und erscheint im Admin.',
+		'Shipping:' => 'Versand:',
+		'Payment method:' => 'Zahlungsart:',
+		'Remarks:' => 'Anmerkungen:',
+		'Questions? Get in touch' => 'Fragen? Kontaktieren Sie uns',
+		'About us' => 'Über uns',
+		'About the Atelier' => 'Über das Atelier',
+		'Devoted to craftsmanship.' => 'Der Handwerkskunst verpflichtet.',
+		"'Atelier Corseterie grew out of a deep-rooted passion for historical silhouettes and the techniques that make them possible. What began as a personal search for authentic materials has grown into a specialised supplier for couturiers and costume makers across Europe." => "'Atelier Corseterie entstand aus einer tiefen Leidenschaft für historische Silhouetten und die Techniken, die sie möglich machen. Was als persönliche Suche nach authentischen Materialien begann, ist zu einem spezialisierten Lieferanten für Couturiers und Kostümbildner in ganz Europa geworden.",
+		'We believe the quality of the finished piece is decided by the quality of the raw materials. A corset is a structural garment; it lives under high tension. That is why we make no concessions on quality. Our boning comes from specialised metalworkers in Germany, our coutil from England and our silk from the finest mills of Italy.' => 'Wir glauben, dass die Qualität des fertigen Stücks von der Qualität der Rohmaterialien bestimmt wird. Ein Korsett ist ein konstruktives Kleidungsstück; es steht unter hoher Spannung. Deshalb machen wir bei der Qualität keine Kompromisse. Unsere Stäbchen kommen von spezialisierten Metallbetrieben aus Deutschland, unser Coutil aus England und unsere Seide aus den besten Webereien Italiens.',
+		'Whether you are building a historically accurate Victorian corset or a modern couture piece, we supply the building blocks for your vision.' => 'Ob Sie ein historisch korrektes viktorianisches Korsett oder ein modernes Couture-Stück fertigen: Wir liefern die Bausteine für Ihre Vision.',
+		'Discover our collection' => 'Entdecken Sie unsere Kollektion',
+		'Customer service' => 'Kundenservice',
+		'Questions about a product, advice on boning sizes, or questions about your order?' => 'Fragen zu einem Produkt, Beratung zu Stäbchengrößen oder Fragen zu Ihrer Bestellung?',
+		'Visiting address' => 'Besuchsadresse',
+		'Our atelier can be visited by appointment to collect orders.' => 'Unser Atelier kann nach Terminvereinbarung zur Abholung von Bestellungen besucht werden.',
+		'The Netherlands' => 'Niederlande',
+		'Send us a message' => 'Schreiben Sie uns',
+		'Name' => 'Name',
+		'Your message' => 'Ihre Nachricht',
+		'Send' => 'Senden',
+		'We are here for you.' => 'Wir sind für Sie da.',
+		'Exclusive Materials' => 'Exklusive Materialien',
+		'The foundation of every masterpiece starts here.' => 'Das Fundament jedes Meisterwerks beginnt hier.',
+		'Our Collection' => 'Unsere Kollektion',
+		'The backbone of every corset. Our coutil is woven specifically not to stretch, which is essential for the structure and shaping of the garment. Available in traditional herringbone and satin finish.' => 'Das Rückgrat jedes Korsetts. Unser Coutil ist speziell so gewebt, dass er nicht nachgibt, was für Struktur und Formgebung essenziell ist. Erhältlich in traditionellem Fischgrat und mit Satin-Finish.',
+		'Silk satin' => 'Seidensatin',
+		'Our Italian silk satin (Duchesse) is of heavy quality, perfect for covering corsets. Its rich sheen gives an unmatched luxurious look that synthetic fabrics simply cannot rival.' => 'Unser italienischer Seidensatin (Duchesse) ist von schwerer Qualität und perfekt zum Beziehen von Korsetts. Sein reicher Glanz verleiht einen unvergleichlichen Luxus, den synthetische Stoffe nicht erreichen.',
+		'Boning' => 'Stäbchen',
+		'We carry both spiral steel for curved seams and flat steel for the back closure. All our steel is galvanised and rust-treated, suitable for intensive use.' => 'Wir führen Spiralstahl für geschwungene Nähte und Flachstahl für den Rückenverschluss. Unser gesamter Stahl ist verzinkt und rostgeschützt, geeignet für intensiven Gebrauch.',
+		'View in shop' => 'Im Shop ansehen',
+		'Masterclasses' => 'Meisterklassen',
+		'The art of making.' => 'Die Kunst des Machens.',
+		'Coming soon' => 'Bald verfügbar',
+		'Our master corset makers are working on a series of in-depth video tutorials. From inserting a busk to perfect finishing with flossing.' => 'Unsere Korsettmeister arbeiten an einer Reihe ausführlicher Video-Tutorials. Vom Einsetzen eines Planchets bis zum perfekten Finish mit Flossing.',
+		'Stay up to date' => 'Bleiben Sie informiert',
+		'Sign up for our newsletter and be the first to get access.' => 'Melden Sie sich für unseren Newsletter an und erhalten Sie als Erste Zugang.',
+		'Your email address' => 'Ihre E-Mail-Adresse',
+		'Subscribe' => 'Anmelden',
+		'Page not found' => 'Seite nicht gefunden',
+		'Error 404: this page does not exist (anymore)' => 'Fehler 404: Diese Seite existiert nicht (mehr)',
+		'Sorry, this page does not exist! Return to the <a href="/" class="async">home page</a> or browse our collection to find the right product!' => 'Diese Seite existiert leider nicht! Kehren Sie zur <a href="/" class="async">Startseite</a> zurück oder stöbern Sie in unserer Kollektion.',
+		'Administration' => 'Verwaltung',
+		'The admin of this demo is a Phlo CMS and runs on its own address.' => 'Der Admin dieser Demo ist ein Phlo CMS und läuft unter einer eigenen Adresse.',
+		'Open the admin' => 'Admin öffnen',
+		'black' => 'schwarz',
+		'white' => 'weiß',
+		'red' => 'rot',
+		'blue' => 'blau',
+		'gold' => 'gold',
+		'silver' => 'silber',
+		'bronze' => 'bronze',
+		'pink' => 'rosa',
+		'nude' => 'nude',
+		'ivory' => 'elfenbein',
+		'green' => 'grün',
+		'purple' => 'violett',
+		'coutil' => 'Coutil',
+		'silk' => 'Seide',
+		'steel' => 'Stahl',
+		'brass' => 'Messing',
+		'cotton' => 'Baumwolle',
+		'satin' => 'Satin',
+		'lace' => 'Spitze',
+		'paper' => 'Papier',
+		'mixed' => 'gemischt',
+	],
+)

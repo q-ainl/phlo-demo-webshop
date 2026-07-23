@@ -1,0 +1,111 @@
+// The storefront router. The shop deliberately has no route nodes: app::route()
+// is reserved for the CMS admin, so every shop path is dispatched here and a
+// stray /products or /orders can never reach a CMS list on the shop hostname.
+
+prop about($lang = null) => arr(en: 'about-us', fr: 'a-propos', es: 'sobre-nosotros', de: 'ueber-uns')[$lang ?? %app->lang]
+prop category($lang = null) => arr(en: 'category', fr: 'categorie', es: 'categoria', de: 'kategorie')[$lang ?? %app->lang]
+prop cart($lang = null) => arr(en: 'cart', fr: 'panier', es: 'cesta', de: 'warenkorb')[$lang ?? %app->lang]
+prop checkout($lang = null) => arr(en: 'checkout', fr: 'paiement', es: 'pago', de: 'kasse')[$lang ?? %app->lang]
+prop contact($lang = null) => arr(en: 'contact', fr: 'contact', es: 'contacto', de: 'kontakt')[$lang ?? %app->lang]
+prop materials($lang = null) => arr(en: 'materials', fr: 'matieres', es: 'materiales', de: 'materialien')[$lang ?? %app->lang]
+prop passed($lang = null) => arr(en: 'passed', fr: 'reussi', es: 'exito', de: 'erfolgreich')[$lang ?? %app->lang]
+prop product($lang = null) => arr(en: 'product', fr: 'produit', es: 'producto', de: 'produkt')[$lang ?? %app->lang]
+prop products($lang = null) => arr(en: 'products', fr: 'produits', es: 'productos', de: 'produkte')[$lang ?? %app->lang]
+prop tutorials($lang = null) => arr(en: 'tutorials', fr: 'tutoriels', es: 'tutoriales', de: 'tutorials')[$lang ?? %app->lang]
+
+method route {
+	$first = (string)%req->part(0)
+	if (in_array($first, ['files', 'images', 'thumbs'], true)) return $this->media
+	if ($first === 'cart') return $this->cartRoute
+	if ($first === 'checkout') return $this->checkoutRoute
+	if ($first === 'admin') return %page_admin->render
+	if (isset(%app->langs[$first])) return $this->section($first)
+	// No language prefix: the root renders the cookie/default language directly,
+	// no redirect. Unknown paths get the 404 page.
+	if ($first === void) return $this->section(%app->lang, root: true)
+	$this->notFound
+}
+
+method section($lang, $root = false){
+	%app->lang = $lang
+	$root || %cookies->lang === $lang || %cookies->lang = $lang
+	$section = $root ? null : %req->part(1)
+	if (!$section) return %page_home->render
+	if ($section === $this->products) return %page_products->catalog(%req->part(2), %req->part(3), %req->part(4))
+	if ($section === $this->category) return $this->categorySection
+	if ($section === $this->product) return ($product = uriProd(%req->part(2))) ? %page_product->render($product) : $this->notFound
+	if ($section === $this->cart) return %page_cart->render
+	if ($section === $this->checkout) return $this->checkoutSection
+	if ($section === $this->about) return %page_about->render
+	if ($section === $this->contact) return %page_contact->render
+	if ($section === $this->materials) return %page_materials->render
+	if ($section === $this->tutorials) return %page_tutorials->render
+	$this->notFound
+}
+
+method categorySection {
+	if (!$category = uriCat(%req->part(2))) return $this->notFound
+	$third = %req->part(3)
+	$fourth = %req->part(4)
+	$subUri = null
+	$offset = 0
+	if ($third){
+		if (is_numeric($third)) $offset = (int)$third
+		else {
+			$subUri = $third
+			if ($fourth && is_numeric($fourth)) $offset = (int)$fourth
+		}
+	}
+	$subcategory = $subUri ? uriCat($subUri) : null
+	if ($subUri && !$subcategory) return $this->notFound
+	if ($subcategory && (int)$subcategory->parentId !== (int)$category->id) return $this->notFound
+	%page_products->category($category, $subcategory, $offset)
+}
+
+method checkoutSection {
+	$action = %req->part(2)
+	if (!$action) return %page_checkout->render
+	if ($action === $this->passed) return %page_checkout_success->render
+	$this->notFound
+}
+
+// Unprefixed utility paths: the cart add/update actions from the product and
+// cart pages, and the checkout form post. Language comes from the cookie.
+method cartRoute {
+	$next = %req->part(1)
+	if ($next === null) return %page_cart->render
+	if ($next === 'update' && %req->async) return %page_cart->update(%req->part(2), %req->part(3))
+	if (is_numeric($next) && %req->async) return %page_cart->add((int)$next)
+	$this->notFound
+}
+
+method checkoutRoute {
+	$next = %req->part(1)
+	if ($next === null) return %page_checkout->render
+	if ($next === 'success') return %page_checkout_success->complete
+	$this->notFound
+}
+
+// Product images and uploads, stored the way the CMS image field stores them:
+// <dir>/<token[0:2]>/<token[2:]>.<ext>, served as /images/<token>/<filename>.
+method media {
+	$section = %req->part(0)
+	$token = (string)%req->part(1)
+	$filename = (string)%req->part(2)
+	if (strlen($token) !== 20 || !$filename) return $this->notFound
+	$file = constant($section).substr($token, 0, 2).slash.substr($token, 2).dot.pathinfo($filename, PATHINFO_EXTENSION)
+	$exists = file_exists($file)
+	output(file: $exists ? $file : www.'no.image.jpg', attachment: $exists ? null : false)
+}
+
+method notFound => page($this->error, en('Page not found'), code: 404)
+
+view error:
+<main.page-main>
+	<div.page-grid-2>
+		<div>
+			<h1>{en: Error 404: this page does not exist (anymore)}</h1>
+			<p>{en: Sorry, this page does not exist! Return to the <a href="/" class="async">home page</a> or browse our collection to find the right product!}</p>
+		</div>
+	</div>
+</main>

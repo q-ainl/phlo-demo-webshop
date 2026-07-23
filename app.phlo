@@ -1,0 +1,47 @@
+prop lang => %cookies->lang ?? 'en'
+prop langs = ['en' => 'English', 'fr' => 'Français', 'es' => 'Español', 'de' => 'Deutsch']
+prop title => $this->admin ? 'Couture Admin' : 'Couture'
+prop version = '1.0'
+prop description = 'L\'Atelier Corseterie: exclusive corsetry supplies for the modern couturier'
+
+// One app, two faces. The storefront answers on the main hostname; the Phlo CMS
+// admin answers on its own entry: any hostname starting with demo.admin. (live),
+// listening port 8081 (Docker/localhost), or PHLO_ADMIN=1 in the environment.
+// CMS links are root-relative, so the admin gets a root of its own, not a sub-path.
+prop admin => getenv('PHLO_ADMIN') === '1' || str_starts_with(strtolower($_SERVER['HTTP_HOST'] ?? void), 'demo.admin.') || ($_SERVER['SERVER_PORT'] ?? null) === '8081'
+
+// The CMS builds its whole admin (nav, lists, records, REST API) from these two
+// declarations. Variants, stock, images and translations are children of the
+// models below, so they stay out of models[] to avoid top-level lists.
+prop models = ['category', 'product', 'order']
+prop menu = [
+	'category' => ['icon' => '🗂️', 'uri' => 'categories', 'title' => 'Categories'],
+	'product'  => ['icon' => '🧵', 'uri' => 'products',   'title' => 'Products'],
+	'order'    => ['icon' => '📦', 'uri' => 'orders',     'title' => 'Orders'],
+]
+prop theme => %session->theme ?? 'kiro'
+prop trans => %session->trans ?? 'slide'
+
+// HTTP basic auth for the admin, from [dashboard] in data/creds.ini (or the
+// PHLO__dashboard__* environment variables). Without credentials the admin is
+// open, which is fine for a local demo; set them before exposing it.
+method gate {
+	if (!$user = %creds->dashboard?->user) return
+	if (($_SERVER['PHP_AUTH_USER'] ?? null) === $user && ($_SERVER['PHP_AUTH_PW'] ?? null) === %creds->dashboard->password) return
+	%res->header('WWW-Authenticate', 'Basic realm="Couture Admin"')
+	error('Authentication required', 401)
+}
+
+if ($this->admin){
+	$this->gate
+	$this->lang = 'en'
+	if (app::route()) return
+	return output(['error' => 'not found'], code: 404)
+}
+return %shop->route()
+
+view head:
+%CSRF
+<link rel=preconnect href=https://fonts.googleapis.com>
+<link rel=preconnect href=https://fonts.gstatic.com crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Montserrat:wght@300;400;500&display=swap" rel=stylesheet>

@@ -1,0 +1,26 @@
+{
+    "name": "phlo/demo-webshop",
+    "description": "A full feature webshop on Phlo: a bilingual storefront with categories, variants and stock, plus a schema-driven Phlo CMS admin on one SQLite file.",
+    "type": "project",
+    "license": "MIT",
+    "keywords": ["phlo", "webshop", "demo", "ecommerce", "cms", "sqlite"],
+    "homepage": "https://github.com/q-ainl/phlo-demo-webshop",
+    "authors": [
+        {
+            "name": "Jordi Boerman",
+            "email": "j@rdi.nu"
+        }
+    ],
+    "require": {
+        "php": ">=8.3",
+        "ext-gd": "*",
+        "ext-pdo_sqlite": "*",
+        "phlo/cms": "^1.0",
+        "phlo/tech": "^1.0"
+    },
+    "minimum-stability": "RC",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true
+    }
+}

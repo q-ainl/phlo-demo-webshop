@@ -1,0 +1,166 @@
+// Handles the checkout form post: stores the order and renders the
+// confirmation directly in the same request. No redirect, no payment
+// provider: this is a demo checkout.
+method complete {
+	if (%req->method === 'POST' && %cart->items){
+		$firstName = %payload->first_name ?? void
+		$lastName = %payload->last_name ?? void
+		$email = %payload->email ?? void
+		$phone = %payload->phone ?? void
+		$address = %payload->address ?? void
+		$zip = %payload->zip ?? void
+		$city = %payload->city ?? void
+		$country = %payload->country ?? void
+		$street = $address
+		$housenumber = void
+		if ($address && preg_match('/^(.+?)\\s*(\\d.*)$/', trim($address), $match)){
+			$street = trim($match[1])
+			$housenumber = trim($match[2])
+		}
+		$items = array_filter(loop(%cart->items, fn($amount, $variantId) => ($variant = %cart->variants[$variantId] ?? null) && ($product = %cart->products[$variant->productId] ?? null) ? obj (
+			title: $product->name,
+			material: $product->material,
+			color: $product->color,
+			size: $variant->size ?: void,
+			thumb: $product->image->thumbSrc ?? '/no.image.jpg',
+			qty: $amount,
+			total: $variant->price * $amount,
+		) : null))
+		$subtotal = %cart->sum
+		$shipping = 4.95
+		$total = $subtotal + $shipping
+		$ship = %payload->shipping ?? en('Standard (2-3 working days)')
+		$payment = %payload->payment ?? 'iDEAL'
+		$note = %payload->note ?? void
+		$order = order::create (
+			firstName: $firstName,
+			lastName: $lastName,
+			email: $email,
+			phone: $phone,
+			street: $street,
+			housenumber: $housenumber,
+			zip: $zip,
+			city: $city,
+			country: $country,
+			status: 'new',
+			comment: $note,
+			total: $total,
+			shipping: $ship,
+			paymentMethod: $payment,
+			created: time(),
+		)
+		foreach (%cart->items AS $variantId => $amount){
+			$variant = %cart->variants[$variantId] ?? null
+			if (!$variant) continue
+			$product = %cart->products[$variant->productId] ?? null
+			order_variant::create (
+				orderId: $order,
+				variant: $variant,
+				title: $product ? $product->name : void,
+				quantity: $amount,
+				price: $variant->price ?? 0,
+			)
+		}
+		%session->lastOrder = obj (
+			id: $order?->id,
+			items: $items,
+			subtotal: $subtotal,
+			shipping: $shipping,
+			total: $total,
+			ship: $ship,
+			payment: $payment,
+			note: $note,
+		)
+		%cart->clear
+	}
+	$this->render
+}
+
+method render => page($this->view, en('Order placed'))
+
+view:
+{( ($order = %session->lastOrder ?? null) ? void : void )}
+{( ($ship = $order->ship ?? en('Standard (2-3 working days)')) ? void : void )}
+{( ($payment = $order->payment ?? 'iDEAL') ? void : void )}
+{( ($note = $order->note ?? void) ? void : void )}
+{( ($subtotal = $order->subtotal ?? 0) ? void : void )}
+{( ($shipping = $order->shipping ?? 0) ? void : void )}
+{( ($total = $order->total ?? 0) ? void : void )}
+{( ($orderId = $order->id ?? null) ? void : void )}
+{( ($orderNumber = $orderId ? 'LC-'.str_pad($orderId, 6, '0', STR_PAD_LEFT) : 'LC-000000') ? void : void )}
+<header.hero>
+	<div.hero-content>
+		<h2>{en: Order placed}</h2>
+		<p>{en: Thank you. We will get to work on your order right away.}</p>
+		<a.cta-btn.async href="/">{en: Continue shopping}</a>
+	</div>
+	<div.hero-overlay></div>
+</header>
+<main.page-main>
+	<div.page-card>
+		<h3>{en: Confirmation}</h3>
+		<div.page-text>
+			<p>
+				<strong>{en: Order number:}</strong> #$orderNumber
+			</p>
+			<p>
+				{en: This is a demo shop: no email is sent and no payment is processed. The order is stored for real though, and shows up in the admin.}
+			</p>
+		</div>
+	</div>
+	<div.page-card>
+		<h3>{en: Summary}</h3>
+		<div.page-text>
+			<p>
+				<strong>{en: Shipping:}</strong> $ship
+			</p>
+			<p>
+				<strong>{en: Payment method:}</strong> $payment
+			</p>
+			<if $note>
+				<p>
+					<strong>{en: Remarks:}</strong> {[ $note ]}
+				</p>
+			</if>
+		</div>
+		<div.cart-items>
+			<if $order && $order->items>
+				<foreach $order->items AS $item>
+					<div.cart-item-row>
+						<img.cart-thumb src="{( $item->thumb ?? '/no.image.jpg' )}" alt="{[ $item->title ]}">
+						<div.cart-details>
+							<h4>{[ $item->title ]}</h4>
+							<p>{( $item->size ?: void )}{( $item->material ? ' • '.ucfirst(en($item->material)) : void )}{( $item->color ? ' • '.ucfirst(en($item->color)) : void )}</p>
+						</div>
+						<div.cart-actions>
+							<div.cart-qty>
+								<input.qty-input type=number value="$item->qty" readonly>
+							</div>
+							<span class="item-price">&euro; {{ price($item->total) }}</span>
+						</div>
+					</div>
+				</foreach>
+			<else>
+				<div.empty-cart-message>
+					<p>{en: Your cart is empty.}</p>
+				</div>
+			</if>
+		</div>
+		<div.summary-divider></div>
+		<div.summary-row>
+			<span>{en: Subtotal}</span>
+			<span>&euro; {{ price($subtotal) }}</span>
+		</div>
+		<div.summary-row>
+			<span>{en: Shipping}</span>
+			<span>&euro; {{ price($shipping) }}</span>
+		</div>
+		<div.summary-row.total>
+			<span>{en: Total}</span>
+			<span>&euro; {{ price($total) }}</span>
+		</div>
+	</div>
+	<div.page-center>
+		<a.cta-btn.async href="/%app->lang/%shop->contact">{en: Questions? Get in touch}</a>
+	</div>
+</main>

@@ -1,0 +1,22 @@
+# Compiled output (rebuilt on serve, or with: php www/app.php build::run)
+php/
+www/*.css
+www/*.js
+www/icons.png
+
+# Runtime
+data/errors.json
+
+# Local config / secrets (never commit)
+data/creds.ini
+.env
+
+# Composer (vendor/phlo/* may be local symlinks during development)
+/vendor/
+composer.lock
+
+# Build / release artifacts
+release/
+
+# Agent state
+.claude/

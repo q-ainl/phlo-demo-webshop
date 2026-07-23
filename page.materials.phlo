@@ -1,0 +1,25 @@
+method render => page($this->view, en('Materials'), $this->hero)
+
+method hero => %layout->hero('Exclusive Materials', 'The foundation of every masterpiece starts here.', 'materials')
+
+view:
+<main.page-main.page-main--wide>
+	<h3.page-title-gold>{en: Our Collection}</h3>
+	<div.page-grid-2>
+		<div>
+			<h4>Coutil</h4>
+			<p.page-text>{en: The backbone of every corset. Our coutil is woven specifically not to stretch, which is essential for the structure and shaping of the garment. Available in traditional herringbone and satin finish.}</p>
+		</div>
+		<div>
+			<h4>{en: Silk satin}</h4>
+			<p.page-text>{en: Our Italian silk satin (Duchesse) is of heavy quality, perfect for covering corsets. Its rich sheen gives an unmatched luxurious look that synthetic fabrics simply cannot rival.}</p>
+		</div>
+		<div>
+			<h4>{en: Boning}</h4>
+			<p.page-text>{en: We carry both spiral steel for curved seams and flat steel for the back closure. All our steel is galvanised and rust-treated, suitable for intensive use.}</p>
+		</div>
+	</div>
+	<div.page-center>
+		<a.cta-btn.async href="/%app->lang/%shop->products">{en: View in shop}</a>
+	</div>
+</main>

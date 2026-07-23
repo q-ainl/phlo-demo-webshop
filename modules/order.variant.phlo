@@ -1,0 +1,35 @@
+@ extends: entity
+
+static table = 'order_variants'
+static titleList = 'Order lines'
+static titleRecord = 'Order line'
+
+view: $this->quantity.'x '.$this->title
+
+static schema => arr (
+	id: field (
+		type: 'number',
+		create: false,
+		change: false,
+		list: false,
+	),
+	orderId: field (
+		type: 'parent',
+		obj: 'order',
+		title: 'Order',
+	),
+	variant: field (
+		type: 'parent',
+		obj: 'variant',
+	),
+	title: field (
+		type: 'text',
+		length: 120,
+	),
+	quantity: field (
+		type: 'number',
+	),
+	price: field (
+		type: 'price',
+	),
+)

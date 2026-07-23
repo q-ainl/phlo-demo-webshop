@@ -1,0 +1,23 @@
+// Render a full shop page: layout + hero + main content. Async (SPA) requests
+// only swap the hero and <main>, sync requests get the complete document.
+function page(string $main, $title = null, $hero = null, ...$args){
+	$title && $args['title'] = $title
+	$hero ??= '<header class="hero empty"></header>'
+	if (%req->async) return view(...$args, outer: ['header.hero' => $hero], main: $main, scroll: 0)
+	view(%layout->header.lf.$hero.lf.$main.lf.%layout->footer, ...$args)
+}
+
+function price($value) => number_format((float)$value, 2, ',', '.')
+
+function uriCat($uri, $lang = null){
+	if (!$uri) return null
+	$translation = category_translation::record(lang: $lang ?? %app->lang, uri: $uri)
+	return $translation?->category
+}
+
+function uriProd($uri, $lang = null){
+	if (!$uri) return null
+	$translation = product_translation::record(lang: $lang ?? %app->lang, uri: $uri)
+	$product = $translation?->product
+	return ($product && $product->active) ? $product : null
+}

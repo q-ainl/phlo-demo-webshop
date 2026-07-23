@@ -1,0 +1,112 @@
+method render => page($this->view, en('Your cart'))
+
+method add($variantId){
+	$variant = variant::record(id: (int)$variantId, active: 1)
+	if (!$variant) error(404)
+	$product = product::record(id: (int)$variant->productId, active: 1)
+	if (!$product) error(404)
+	%cart->add($variant->id)
+	$this->refresh
+}
+
+method update($id, $amount){
+	%cart->set((int)$id, max((int)$amount, 0))
+	$this->refresh
+}
+
+method refresh => apply (
+	inner: ['#cart-number' => %cart->count, '#cart-items-wrapper' => $this->items, '#cart-summary' => $this->summary],
+	trans: true,
+)
+
+view:
+<main#cart-container.cart-page-container>
+	<div.cart-header>
+		<h2>{en: Your cart}</h2>
+		<a.back-btn.async href="/"><span>←</span>{en: Continue shopping}</a>
+	</div>
+	<div.cart-layout>
+		<div#cart-items-wrapper.cart-items>
+			{{ $this->items }}
+		</div>
+		<aside#cart-summary.cart-summary>
+			{{ $this->summary }}
+		</aside>
+	</div>
+</main>
+
+view items:
+<if %cart->items>
+	<foreach %cart->items AS $variantId => $amount>
+		{( ($variant = %cart->variants[$variantId] ?? null) ? void : void )}
+		{( ($product = $variant ? (%cart->products[$variant->productId] ?? null) : null) ? void : void )}
+		<if $variant && $product>
+			<div.cart-item-row>
+				<img.cart-thumb src="{( $product->image->thumbSrc ?? '/no.image.jpg' )}" alt="{[ $product->name ]}">
+				<div.cart-details>
+					<h4>{[ $product->name ]}</h4>
+					<p>{( $variant->size ?: void )}{( $product->material ? ' • '.ucfirst(en($product->material)) : void )}{( $product->color ? ' • '.ucfirst(en($product->color)) : void )}</p>
+				</div>
+				<div.cart-actions>
+					<div.cart-qty>
+						<button.qty-btn type=button data-action=minus data-id="$variant->id" aria-label="{en: Less}">-</button>
+						<input.qty-input type=number min=0 value=$amount data-id="$variant->id">
+						<button.qty-btn type=button data-action=plus data-id="$variant->id" aria-label="{en: More}">+</button>
+					</div>
+					<span.item-price>&euro; {{ price($variant->price * $amount) }}</span>
+					<button.remove-btn type=button data-id="$variant->id">{en: Remove}</button>
+				</div>
+			</div>
+		</if>
+	</foreach>
+<else>
+	<div.empty-cart-message>
+		<p>{en: Your cart is empty.}</p>
+	</div>
+</if>
+
+view summary:
+{( ($subtotal = (%cart->items ? %cart->sum : 0)) ? void : void )}
+{( ($shipping = (%cart->items ? 4.95 : 0)) ? void : void )}
+{( ($total = $subtotal + $shipping) ? void : void )}
+<h3>{en: Summary}</h3>
+<div.summary-row>
+	<span>{en: Subtotal}</span>
+	<span>&euro; {{ price($subtotal) }}</span>
+</div>
+<div.summary-row>
+	<span>{en: Shipping}</span>
+	<span>&euro; {{ price($shipping) }}</span>
+</div>
+<div.summary-divider></div>
+<div.summary-row.total>
+	<span>{en: Total}</span>
+	<span>&euro; {{ price($total) }}</span>
+</div>
+<if %cart->items>
+	<a.cta-btn.checkout-btn.async href="/%app->lang/%shop->checkout">{en: Checkout}</a>
+<else>
+	<button.cta-btn.checkout-btn disabled>{en: Checkout}</button>
+</if>
+<div.payment-methods>
+	<p>{en: Pay securely with}</p>
+	<div.payment-icons>
+		<span>iDEAL</span>
+		<span>Creditcard</span>
+		<span>PayPal</span>
+	</div>
+</div>
+
+<script>
+const updateAmount = (id, amount) => app.get(`cart/update/${id}/${amount}`)
+on('click', '.qty-btn', (btn) => {
+	const input = document.querySelector(`.qty-input[data-id=\"${btn.dataset.id}\"]`)
+	if (!input) return
+	const current = parseInt(input.value || '0', 10)
+	const next = btn.dataset.action === 'plus' ? current + 1 : Math.max(current - 1, 0)
+	input.value = next
+	updateAmount(btn.dataset.id, next)
+})
+on('change', '.qty-input', (input) => updateAmount(input.dataset.id, Math.max(parseInt(input.value || '0', 10), 0)))
+on('click', '.remove-btn', (btn) => updateAmount(btn.dataset.id, 0))
+</script>

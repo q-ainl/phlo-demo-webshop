@@ -1,0 +1,21 @@
+method render => page($this->view, en('About us'), $this->hero)
+
+method hero => %layout->hero('About the Atelier', 'Devoted to craftsmanship.', 'about')
+
+view:
+<main.page-main>
+	<div.page-text>
+		<p>
+			<span.dropcap>L</span>{en: 'Atelier Corseterie grew out of a deep-rooted passion for historical silhouettes and the techniques that make them possible. What began as a personal search for authentic materials has grown into a specialised supplier for couturiers and costume makers across Europe.}
+		</p>
+		<p>
+			{en: We believe the quality of the finished piece is decided by the quality of the raw materials. A corset is a structural garment; it lives under high tension. That is why we make no concessions on quality. Our boning comes from specialised metalworkers in Germany, our coutil from England and our silk from the finest mills of Italy.}
+		</p>
+		<p>
+			{en: Whether you are building a historically accurate Victorian corset or a modern couture piece, we supply the building blocks for your vision.}
+		</p>
+	</div>
+	<div.page-center>
+		<a.cta-btn.async href="/%app->lang/%shop->products">{en: Discover our collection}</a>
+	</div>
+</main>

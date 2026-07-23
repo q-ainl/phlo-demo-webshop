@@ -1,0 +1,90 @@
+@ extends: entity
+
+static table = 'categories'
+static order = 'sort ASC'
+static titleList = 'Categories'
+static titleRecord = 'Category'
+static listView = 'sort'
+
+view: $this->title
+
+method afterSave($old = null) => $this->syncTranslations('category_translation', 'category')
+
+prop localized => category_translation::record(category: $this->id, lang: %app->lang)
+prop url => slash.%app->lang.slash.%shop->category.slash.$this->slug
+prop parentId => $this->objData['parent'] ?? null
+prop children => category::records(parent: $this->id)
+prop products(...$args) => product::records(...$args, joins: 'JOIN category_products cp ON cp.product=products.id', where: 'cp.category='.(int)$this->id.' AND products.active=1')
+prop productCount => product::item(columns: 'COUNT(products.id)', joins: 'JOIN category_products cp ON cp.product=products.id', where: 'cp.category='.(int)$this->id.' AND products.active=1')
+
+static objWidgets => [
+	'Revenue per category' => obj (
+		order: 8,
+		type: 'pie',
+		price: true,
+		data: category::pair (
+			table: 'order_variants',
+			columns: 'c.title, SUM(order_variants.price * order_variants.quantity)',
+			joins: implode(space, [
+				'JOIN variants v ON order_variants.variant = v.id',
+				'JOIN products p ON v.product = p.id',
+				'JOIN category_products cp ON p.id = cp.product',
+				'JOIN categories c ON cp.category = c.id',
+			]),
+			group: 'c.id',
+			order: 'SUM(order_variants.price * order_variants.quantity) DESC',
+			limit: 8,
+		),
+	),
+]
+
+static schema => arr (
+	id: field (
+		type: 'number',
+		create: false,
+		change: false,
+		list: false,
+	),
+	parent: field (
+		type: 'parent',
+		obj: 'category',
+	),
+	sort: field (
+		type: 'number',
+		create: false,
+		change: false,
+		record: false,
+		list: false,
+	),
+	uri: field (
+		type: 'text',
+		title: 'URI',
+		length: 100,
+	),
+	title: field (
+		type: 'text',
+		length: 100,
+		required: true,
+		search: true,
+	),
+	sale: field (
+		type: 'bool',
+		title: 'Sale',
+	),
+	text: field (
+		type: 'text',
+		list: false,
+		length: 65535,
+	),
+	translations: field (
+		type: 'child',
+		list: false,
+		obj: 'category_translation',
+	),
+	products: field (
+		type: 'many',
+		obj: 'product',
+		table: 'category_products',
+		list: false,
+	),
+)

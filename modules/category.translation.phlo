@@ -1,0 +1,38 @@
+@ extends: entity
+
+static table = 'category_translations'
+static titleList = 'Category translations'
+static titleRecord = 'Translation'
+
+view: $this->lang.': '.$this->title
+
+static schema => arr (
+	id: field (
+		type: 'number',
+		create: false,
+		change: false,
+		list: false,
+	),
+	category: field (
+		type: 'parent',
+		obj: 'category',
+	),
+	lang: field (
+		type: 'select',
+		options: ['en', 'fr', 'es', 'de'],
+	),
+	uri: field (
+		type: 'text',
+		title: 'URI',
+		length: 100,
+	),
+	title: field (
+		type: 'text',
+		length: 100,
+	),
+	text: field (
+		type: 'text',
+		length: 65535,
+		list: false,
+	),
+)

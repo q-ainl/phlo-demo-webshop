@@ -1,0 +1,121 @@
+method render($product){
+	$related = product::records(where: 'id != '.(int)$product->id.' AND active=1', order: 'RANDOM()', limit: 3)
+	page($this->view($product, $related), $product->name)
+}
+
+view($product, $related):
+<main#shop.shop-container.shop-container--no-hero>
+	{{ %page_products->filters }}
+	<section#main-content-area.products-area>
+		<div.breadcrumbs>Shop / {[ $product->name ]}</div>
+		<div.detail-view>
+			<div.detail-gallery>
+				<div.detail-main-image>
+					<img#detail-main-image src="{( $product->image->src ?? '/no.image.jpg' )}" alt="{[ $product->name ]}">
+				</div>
+				<if $product->images>
+					<div.detail-thumbs>
+						<foreach $product->images AS $image>
+							<button class="detail-thumb{( $image === $product->image ? ' active' : void )}" type=button data-full="$image->src" aria-label="{[ $product->name ]}">
+								<img src="{( $image->thumbSrc ?? $image->src )}" alt="{[ $product->name ]}">
+							</button>
+						</foreach>
+					</div>
+				</if>
+			</div>
+			<div.detail-content>
+				<a.back-btn.async href="/%app->lang/%shop->products"><span>←</span> {en: Back to overview}</a>
+				<h2>{[ $product->name ]}</h2>
+				<div.detail-price>
+					<if $product->priceOld > 0>
+						<span#variant-price-old class="price-old">&euro; {{ price($product->priceOld) }}&nbsp;</span>
+					</if>
+					<span#variant-price>€ {{ price($product->price) }}</span>
+				</div>
+				<p.detail-desc>{[ $product->description ]}</p>
+				<div.detail-specs>
+					<h4>{en: Specifications}</h4>
+					<div.spec-row><span>{en: Material}:</span><span>{( ucfirst(en($product->material ?: dash)) )}</span></div>
+					<div.spec-row><span>{en: Colour}:</span><span>{( ucfirst(en($product->color ?: dash)) )}</span></div>
+					<div.spec-row><span>SKU:</span><span>$product->sku</span></div>
+				</div>
+				<if $variants = $product->activeVariants>
+					<div.detail-specs>
+						<h4>{en: Choose a variant}</h4>
+						<select#variant-select.sort-dropdown name=variant aria-label="{en: Choose a variant}">
+							<foreach $variants AS $variant>
+								<option value="$variant->id" data-price="{{ price($variant->price) }}" data-price-old="{( $variant->priceOld ? price($variant->priceOld) : void )}" data-stock="$variant->stockLevel">
+									{[ $variant->label ]} — € {{ price($variant->price) }}
+								</option>
+							</foreach>
+						</select>
+						<div#variant-stock class="detail-stock"{( $product->currentVariantStock > 0 && $product->currentVariantStock < 5 ? void : ' style="display:none"' )}>{en: Low stock}</div>
+					</div>
+					<a#add-to-cart.add-btn.async href="/cart/{( $product->currentVariant->id ?? void )}">{en: Add to cart}</a>
+				</if>
+			</div>
+			<section.related-section>
+				<h3>{en: You may also like}</h3>
+				{{ %listing->related($related) }}
+			</section>
+		</div>
+	</section>
+</main>
+<dialog#cart-modal.cart-modal>
+	<div.cart-modal__content>
+		<button.cart-modal__close type=button aria-label="{en: Close}">&times;</button>
+		<h3>{en: Added to cart}</h3>
+		<p>{en: Choose what you would like to do next.}</p>
+		<div.cart-modal__actions>
+			<button.cart-modal__btn.cart-modal__btn--secondary type=button>{en: Continue shopping}</button>
+			<a.cart-modal__btn.cart-modal__btn--primary.async href=/cart>{en: Checkout}</a>
+		</div>
+	</div>
+</dialog>
+
+<script>
+on('change', '#variant-select', (select) => {
+	const option = select.options[select.selectedIndex]
+	const price = option?.dataset?.price || ''
+	const priceOld = option?.dataset?.priceOld || ''
+	const priceEl = document.getElementById('variant-price')
+	const priceOldEl = document.getElementById('variant-price-old')
+	const addBtn = document.getElementById('add-to-cart')
+	if (priceEl) priceEl.textContent = price ? `€ ${price}` : ''
+	if (priceOldEl){
+		if (priceOld) priceOldEl.textContent = `€ ${priceOld} `
+		else priceOldEl.textContent = ''
+	}
+	const stockEl = document.getElementById('variant-stock')
+	const stock = parseInt(option?.dataset?.stock || '0', 10)
+	if (stockEl) stockEl.style.display = (stock > 0 && stock < 5) ? '' : 'none'
+	if (addBtn && option?.value) addBtn.setAttribute('href', `/cart/${option.value}`)
+})
+on('click', '.detail-thumb', (btn) => {
+	const main = document.getElementById('detail-main-image')
+	if (!main) return
+	const next = btn.dataset?.full
+	if (next) main.src = next
+	document.querySelectorAll('.detail-thumb.active').forEach(el => el.classList.remove('active'))
+	btn.classList.add('active')
+})
+on('click', '#add-to-cart', () => {
+	const modal = document.getElementById('cart-modal')
+	if (modal && modal.showModal) modal.showModal()
+})
+on('click', '.cart-modal__close, .cart-modal__btn--secondary', () => {
+	const modal = document.getElementById('cart-modal')
+	if (modal && modal.open) modal.close()
+})
+on('click', '.cart-modal__btn--primary', () => {
+	const modal = document.getElementById('cart-modal')
+	if (modal && modal.open) modal.close()
+})
+on('click', '#cart-modal', (modal, e, isSelf) => {
+	if (isSelf && modal.open) modal.close()
+})
+window.addEventListener('pageshow', () => {
+	const modal = document.getElementById('cart-modal')
+	if (modal && modal.open) modal.close()
+})
+</script>

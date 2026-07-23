@@ -1,0 +1,19 @@
+method render => page($this->view, en('Tutorials'), $this->hero)
+
+method hero => %layout->hero('Masterclasses', 'The art of making.', 'tutorials')
+
+view:
+<main.page-main.page-center>
+	<h3>{en: Coming soon}</h3>
+	<p.page-text>
+		{en: Our master corset makers are working on a series of in-depth video tutorials. From inserting a busk to perfect finishing with flossing.}
+	</p>
+	<div.page-card>
+		<h4>{en: Stay up to date}</h4>
+		<p.page-text>{en: Sign up for our newsletter and be the first to get access.}</p>
+		<form.form-grid action=# method=post>
+			<input.input type=email name=email placeholder="{en: Your email address}">
+			<button.cta-btn type=submit>{en: Subscribe}</button>
+		</form>
+	</div>
+</main>

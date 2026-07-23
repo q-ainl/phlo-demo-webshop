@@ -1,0 +1,21 @@
+// The CMS admin lives on its own root (its links are root-relative), so /admin
+// on the shop renders a signpost to the right entry instead of the CMS itself.
+method render => page($this->view, 'Admin')
+
+prop adminUrl => str_ends_with($host = strtolower($_SERVER['HTTP_HOST'] ?? void), '.qdev.nl') ? 'https://demo.admin.'.preg_replace('/^demo\./', void, $host).slash : 'http://'.(explode(colon, $host)[0] ?: 'localhost').':8081/'
+
+view:
+<main.page-main.page-center>
+	<h3>{en: Administration}</h3>
+	<p.page-text>
+		{en: The admin of this demo is a Phlo CMS and runs on its own address.}
+	</p>
+	<div.page-card>
+		<p.page-text>
+			<a.cta-btn href="$this->adminUrl">{en: Open the admin}</a>
+		</p>
+		<p.page-text>
+			<code>$this->adminUrl</code>
+		</p>
+	</div>
+</main>

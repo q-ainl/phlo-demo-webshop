@@ -1,0 +1,129 @@
+method render => page($this->view, en('Checkout'))
+
+view:
+<main.checkout-page.cart-page-container>
+	<div.cart-header>
+		<h2>{en: Checkout}</h2>
+		<a.back-btn.async href=/cart><span>←</span>{en: Back to cart}</a>
+	</div>
+	<div.cart-layout>
+		<div.panel-left>
+			<div.page-card>
+				<h3>{en: Your details}</h3>
+				<div.form-grid>
+					<input.input type=text name=first_name form=checkout-options placeholder="{en: First name}" required>
+					<input.input type=text name=last_name form=checkout-options placeholder="{en: Last name}" required>
+					<input.input type=email name=email form=checkout-options placeholder="{en: Email}" required>
+					<input.input type=tel name=phone form=checkout-options placeholder="{en: Phone}">
+				</div>
+			</div>
+			<div.page-card>
+				<h3>{en: Delivery address}</h3>
+				<div.form-grid>
+					<input.input type=text name=address form=checkout-options placeholder="{en: Street + number}" required>
+					<input.input type=text name=zip form=checkout-options placeholder="{en: Postal code}" required>
+					<input.input type=text name=city form=checkout-options placeholder="{en: City}" required>
+					<input.input type=text name=country form=checkout-options placeholder="{en: Country}" required>
+				</div>
+			</div>
+			<form#checkout-options action=/checkout/success method=post>
+				<div.page-card>
+					<h3>{en: Shipping}</h3>
+					<div.page-text>
+						<label.checkbox-label>
+							<input type=radio name=shipping value="{{ en('Standard (2-3 working days)') }}" checked>
+							{{ en('Standard shipping (2-3 working days)') }}
+						</label>
+					</div>
+					<div.page-text>
+						<label.checkbox-label>
+							<input type=radio name=shipping value="{{ en('Express (1 working day)') }}">
+							{{ en('Express (1 working day)') }}
+						</label>
+					</div>
+				</div>
+				<div.page-card>
+					<h3>{en: Payment method}</h3>
+					<div.page-text>
+						<label.checkbox-label>
+							<input type=radio name=payment value=iDEAL checked>
+							iDEAL
+						</label>
+					</div>
+					<div.page-text>
+						<label.checkbox-label>
+							<input type=radio name=payment value=Creditcard>
+							Creditcard
+						</label>
+					</div>
+					<div.page-text>
+						<label.checkbox-label>
+							<input type=radio name=payment value=PayPal>
+							PayPal
+						</label>
+					</div>
+				</div>
+			</form>
+			<div.page-card>
+				<h3>{en: Remarks}</h3>
+				<div.form-grid>
+					<textarea.textarea name=note form=checkout-options rows=4 placeholder="{en: E.g. delivery instructions or sizing advice}"></textarea>
+				</div>
+			</div>
+		</div>
+		<aside.cart-summary>
+			{( ($subtotal = (%cart->items ? %cart->sum : 0)) ? void : void )}
+			{( ($shipping = (%cart->items ? 4.95 : 0)) ? void : void )}
+			{( ($total = $subtotal + $shipping) ? void : void )}
+			<h3>{en: Summary}</h3>
+			<div.summary-row>
+				<span>{en: Subtotal}</span>
+				<span>&euro; {{ price($subtotal) }}</span>
+			</div>
+			<div.summary-row>
+				<span>{en: Shipping}</span>
+				<span>&euro; {{ price($shipping) }}</span>
+			</div>
+			<div.summary-divider></div>
+			<div.summary-row.total>
+				<span>{en: Total}</span>
+				<span>&euro; {{ price($total) }}</span>
+			</div>
+			<button.cta-btn.checkout-btn type=submit form=checkout-options>{en: Place order}</button>
+			<div.payment-methods>
+				<p>{en: Pay securely with}</p>
+				<div.payment-icons>
+					<span>iDEAL</span>
+					<span>Creditcard</span>
+					<span>PayPal</span>
+				</div>
+			</div>
+			<div.page-text>
+				<p>
+					{en: By placing an order you agree to our terms. This is a demo: nothing is shipped and nothing is charged.}
+				</p>
+			</div>
+		</aside>
+	</div>
+</main>
+
+<script>
+on('click', '.checkout-btn', (btn, e) => {
+	const form = document.getElementById('checkout-options')
+	if (!form) return true
+	let firstInvalid = null
+	form.querySelectorAll('input.is-invalid, textarea.is-invalid').forEach(el => el.classList.remove('is-invalid'))
+	form.querySelectorAll('input[required], textarea[required]').forEach((field) => {
+		if (!field.checkValidity()){
+			field.classList.add('is-invalid')
+			if (!firstInvalid) firstInvalid = field
+		}
+	})
+	if (firstInvalid){
+		firstInvalid.focus()
+		return false
+	}
+	return true
+})
+on('input', '#checkout-options input, #checkout-options textarea', (field) => field.classList.remove('is-invalid'))
+</script>

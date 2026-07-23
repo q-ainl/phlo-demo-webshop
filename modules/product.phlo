@@ -1,0 +1,126 @@
+@ extends: entity
+
+static table = 'products'
+static order = 'id DESC'
+static titleList = 'Products'
+static titleRecord = 'Product'
+
+view: $this->title
+
+method afterSave($old = null) => $this->syncTranslations('product_translation', 'product')
+
+prop localized => product_translation::record(product: $this->id, lang: %app->lang)
+prop url => slash.%app->lang.slash.%shop->product.slash.$this->slug
+prop activeVariants => array_filter($this->variants, fn($variant) => $variant->active)
+prop currentVariant => current($this->activeVariants) ?: null
+prop price => $this->currentVariant->price ?? null
+prop priceOld => $this->currentVariant->priceOld ?? null
+prop currentVariantStock => ($variant = $this->currentVariant) ? array_sum(loop($variant->stock, fn($stock) => $stock->level)) : 0
+prop priceMin => ($prices = loop($this->activeVariants, fn($variant) => $variant->price)) ? min($prices) : $this->price
+prop priceMax => ($prices = loop($this->activeVariants, fn($variant) => $variant->price)) ? max($prices) : $this->price
+prop image => current($this->images) ?: null
+
+static objFilters = [
+	'active'   => ['title' => 'Active',   'filter' => 'active = 1'],
+	'inactive' => ['title' => 'Inactive', 'filter' => 'active = 0'],
+]
+
+static objSorts = [
+	'newest' => ['title' => 'Newest',    'order' => 'id DESC'],
+	'title'  => ['title' => 'Title A-Z', 'order' => 'title ASC'],
+	'sku'    => ['title' => 'SKU',       'order' => 'sku ASC'],
+]
+
+static objWidgets => [
+	'Products' => obj (
+		order: 1,
+		type: 'gauge',
+		data: static::item(columns: 'COUNT(id)', where: 'active=1'),
+	),
+	'Top 5 best selling products' => obj (
+		order: 7,
+		type: 'list',
+		data: loop(static::records (
+			table: 'order_variants',
+			columns: 'p.id,p.*,SUM(order_variants.quantity) AS count',
+			joins: 'JOIN variants ON variants.id = order_variants.variant JOIN products p ON variants.product = p.id',
+			group: 'p.id',
+			order: 'count DESC',
+			limit: 5,
+		), fn($record, $id) => tag('b', $record->count.'x').space.tag('a', $record->title, href: "/product/$id", class: 'async')),
+	),
+]
+
+static schema => arr (
+	id: field (
+		type: 'number',
+		create: false,
+		change: false,
+		list: false,
+	),
+	thumb: field (
+		type: 'virtual',
+		label: fn($record) => tag('img', src: ($image = current($record->images)) ? "/thumbs/$image->name_token/".rawurlencode($image->name) : '/no.image.jpg'),
+	),
+	title: field (
+		type: 'text',
+		length: 100,
+		required: true,
+		search: true,
+	),
+	uri: field (
+		type: 'text',
+		title: 'URI',
+		list: false,
+		length: 100,
+	),
+	active: field (
+		type: 'bool',
+	),
+	sku: field (
+		type: 'text',
+		title: 'SKU',
+		length: 20,
+	),
+	color: field (
+		type: 'text',
+		length: 20,
+	),
+	material: field (
+		type: 'text',
+		length: 30,
+	),
+	text: field (
+		type: 'text',
+		list: false,
+		length: 65535,
+	),
+	categories: field (
+		type: 'many',
+		obj: 'category',
+		table: 'category_products',
+		list: false,
+	),
+	variants: field (
+		type: 'child',
+		obj: 'variant',
+		list: false,
+	),
+	images: field (
+		type: 'child',
+		obj: 'product_image',
+		list: false,
+	),
+	translations: field (
+		type: 'child',
+		list: false,
+		obj: 'product_translation',
+	),
+	created: field (
+		type: 'datetime',
+	),
+	changed: field (
+		type: 'datetime',
+		list: false,
+	),
+)

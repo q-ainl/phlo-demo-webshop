@@ -1,0 +1,18 @@
+# Run this demo with Docker; the image bundles the Phlo engine:
+#   composer install         (pulls Phlo CMS into vendor/)
+#   docker compose up   ->   shop:  http://localhost
+#                            admin: http://localhost:8081
+#
+# One container serves both faces: Caddy listens on :80 (the storefront) and
+# on :8081 (the Phlo CMS admin); the app tells them apart by listening port.
+# Port taken, or running a second demo? PORT=8080 ADMIN_PORT=8082 docker compose up.
+services:
+  app:
+    image: ghcr.io/q-ainl/phlo
+    ports:
+      - "${PORT:-80}:80"
+      - "${ADMIN_PORT:-8081}:8081"
+    environment:
+      SERVER_NAME: ":80, :8081"
+    volumes:
+      - .:/app

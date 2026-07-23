@@ -1,0 +1,27 @@
+@ extends: entity
+
+static table = 'variant_stock'
+static titleList = 'Stock'
+static titleRecord = 'Stock'
+
+view: $this->location.': '.$this->level
+
+static schema => arr (
+	id: field (
+		type: 'number',
+		create: false,
+		change: false,
+		list: false,
+	),
+	variant: field (
+		type: 'parent',
+		obj: 'variant',
+	),
+	location: field (
+		type: 'text',
+		length: 30,
+	),
+	level: field (
+		type: 'number',
+	),
+)

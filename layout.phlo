@@ -1,0 +1,89 @@
+prop mainCategories => category::records(where: 'parent IS NULL OR parent = 0')
+
+view header:
+<nav.navbar>
+	<div.nav-left>
+		<a#mobile-menu-btn.nav-link href=#>{en: Menu}</a>
+	</div>
+	<div.nav-center>
+		<a.brand-link.async href="/">
+			<h1.brand-logo>L'Atelier Corseterie</h1>
+		</a>
+	</div>
+	<div.nav-right>
+		{{ $this->langSwitch }}
+		<a.icon-btn.relative.async href=/cart aria-label="{en: Shopping cart}">
+			<span.icon.cart aria-hidden=true></span>
+			<span#cart-number.badge>{( %cart->count ?? 0 )}</span>
+		</a>
+	</div>
+</nav>
+<div#mobile-nav-overlay.mobile-nav>
+	<div.mobile-nav-content>
+		<button#close-mobile-menu.icon-btn.close-nav type=button aria-label="{en: Close menu}">
+			<span.icon.close></span>
+		</button>
+		<ul.mobile-nav-links>
+			<li><span>{en: SHOP}</span></li>
+			<li><a.async href="/%app->lang/%shop->products">{en: All products}</a></li>
+			<foreach $this->mainCategories AS $category>
+				<li><a.async href="$category->url">$category->name</a></li>
+			</foreach>
+			<li><span>{en: INSPIRATION}</span></li>
+			<li><a.async href="/%app->lang/%shop->tutorials">{en: Tutorials}</a></li>
+			<li><a.async href="/%app->lang/%shop->materials">{en: Materials}</a></li>
+			<li><span>{en: ABOUT}</span></li>
+			<li><a.async href="/%app->lang/%shop->about">{en: About the atelier}</a></li>
+			<li><a.async href="/%app->lang/%shop->contact">{en: Contact}</a></li>
+		</ul>
+	</div>
+</div>
+
+view langSwitch:
+<span.lang-switch>
+	<foreach %app->langs AS $code => $label>
+		<a class="{( %app->lang === $code ? 'active' : void )}" href="/$code" title="$label">{{ strtoupper($code) }}</a>
+	</foreach>
+</span>
+
+view hero($title, $subtitle = null, $variant = null):
+<header class="hero{( $variant ? ' hero--'.$variant : '' )}">
+	<div.hero-content>
+		<h2>{{ en($title) }}</h2>
+		<if $subtitle>
+			<p>{{ en($subtitle) }}</p>
+		</if>
+	</div>
+	<div.hero-overlay></div>
+</header>
+
+view footer:
+<footer>
+	<p>&copy; 2026 L'Atelier Corseterie. {en: Fine corsetry supplies.}</p>
+	<p.footer-note>{en: Demo webshop built with} <a href="https://phlo.tech" target=_blank rel=noopener>Phlo</a>.</p>
+</footer>
+
+<script>
+on('click', '#mobile-menu-btn', () => app.mod.class('#mobile-nav-overlay', 'open'))
+on('click', '#close-mobile-menu', () => app.mod.class('#mobile-nav-overlay', '-open'))
+on('click', '#mobile-nav-overlay', (nav, e, isSelf) => isSelf && app.mod.class(nav, '-open'))
+on('click', '.mobile-nav-links a', () => app.mod.class('#mobile-nav-overlay', '-open'))
+</script>
+
+<style>
+:root {
+	$accent-gold: #B08D26
+	$accent-gold-dim: #D4AF37
+	$bg-color: #FDFBF7
+	$border-color: #E5E0D8
+	$card-bg: #FFFFFF
+	$font-body: 'Montserrat', sans-serif
+	$font-heading: 'Cinzel', serif
+	$spacing-lg: 4rem
+	$spacing-md: 2rem
+	$spacing-sm: 1rem
+	$spacing-xs: .5rem
+	$text-primary: #1C1C1C
+	$text-secondary: #5A5A5A
+}
+</style>

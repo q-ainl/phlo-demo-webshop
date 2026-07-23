@@ -1,0 +1,137 @@
+@ extends: entity
+
+static table = 'orders'
+static order = 'id DESC'
+static titleList = 'Orders'
+static titleRecord = 'Order'
+
+view: '#'.$this->id.' '.trim($this->firstName.space.$this->lastName)
+
+static objFilters = [
+	'new'       => ['title' => 'New',       'filter' => "status = 'new'"],
+	'paid'      => ['title' => 'Paid',      'filter' => "status = 'paid'"],
+	'sent'      => ['title' => 'Sent',      'filter' => "status = 'sent'"],
+	'completed' => ['title' => 'Completed', 'filter' => "status = 'completed'"],
+]
+
+static objWidgets => [
+	'Revenue last 7 days' => obj (
+		order: 5,
+		type: 'bar',
+		price: true,
+		data: static::pair (
+			columns: "date(created, 'unixepoch') AS day, COALESCE(SUM(total), 0)",
+			where: 'created > '.(time() - 7 * 86400),
+			group: 'day',
+			order: 'day ASC',
+		),
+	),
+	'Latest 5 orders' => obj (
+		order: 3,
+		type: 'list',
+		data: loop(static::records(order: 'id DESC', limit: 5), fn($order, $id) => tag('a', '#'.$id, href: "/order/$id", class: 'async')." - $order->firstName $order->lastName - ".tag('span', void, data_ts: $order->created)),
+	),
+	'Orders per day (30d avg)' => obj (
+		order: 2,
+		type: 'gauge',
+		data: static::item(columns: 'ROUND(COUNT(id) / 30.0, 1)', where: 'created > '.(time() - 30 * 86400)),
+	),
+	'Average order value per month' => obj (
+		order: 6,
+		type: 'line',
+		name: 'Avg value',
+		price: true,
+		data: static::pair (
+			columns: "strftime('%Y-%m', created, 'unixepoch') AS month, ROUND(AVG(total), 2)",
+			where: 'created > '.(time() - 365 * 86400),
+			group: 'month',
+			order: 'month ASC',
+		),
+	),
+]
+
+static schema => arr (
+	id: field (
+		type: 'number',
+		create: false,
+		change: false,
+	),
+	firstName: field (
+		type: 'text',
+		title: 'First name',
+		length: 40,
+	),
+	lastName: field (
+		type: 'text',
+		title: 'Last name',
+		length: 60,
+	),
+	email: field (
+		type: 'email',
+		length: 100,
+		list: false,
+	),
+	phone: field (
+		type: 'text',
+		length: 50,
+		list: false,
+	),
+	street: field (
+		type: 'text',
+		length: 100,
+		list: false,
+	),
+	housenumber: field (
+		type: 'text',
+		length: 20,
+		list: false,
+	),
+	zip: field (
+		type: 'text',
+		title: 'ZIP',
+		length: 10,
+		list: false,
+	),
+	city: field (
+		type: 'text',
+		length: 50,
+		list: false,
+	),
+	country: field (
+		type: 'text',
+		length: 40,
+		list: false,
+	),
+	status: field (
+		type: 'select',
+		options: ['new', 'paid', 'sent', 'completed', 'cancelled'],
+		default: 'new',
+	),
+	variants: field (
+		type: 'child',
+		obj: 'order_variant',
+		key: 'orderId',
+	),
+	shipping: field (
+		type: 'text',
+		length: 60,
+		list: false,
+	),
+	paymentMethod: field (
+		type: 'text',
+		title: 'Payment',
+		length: 30,
+		list: false,
+	),
+	comment: field (
+		type: 'text',
+		length: 65535,
+		list: false,
+	),
+	total: field (
+		type: 'price',
+	),
+	created: field (
+		type: 'datetime',
+	),
+)

@@ -1,0 +1,38 @@
+@ extends: model
+
+// Every model in this demo stores in one SQLite file, so the whole shop
+// is a single portable database you can copy, ship and re-seed.
+static DB => %SQLite(data.'shop.db')
+static objValidate = true
+
+// Localised title/uri: English is the master on the record itself, other
+// languages come from the *_translations child table. Falls back to the master.
+prop name => %app->lang === 'en' ? $this->title : ($this->localized->title ?? $this->title)
+prop slug => %app->lang === 'en' ? $this->uri : ($this->localized->uri ?? $this->uri)
+prop description => %app->lang === 'en' ? $this->text : ($this->localized->text ?? $this->text)
+
+// Copy the master texts into the translations table for every app language.
+// With an OpenAI key in data/creds.ini the non-English rows are translated,
+// without one they start as a copy you can edit in the admin.
+method syncTranslations($model, $key){
+	foreach (array_keys(%app->langs) AS $lang){
+		$translation = $model::record(...[$key => $this->id, 'lang' => $lang])
+		if ($translation && $lang !== 'en' && !%creds->OpenAI) continue
+		$uri = $this->translated($lang, $this->uri)
+		$title = $this->translated($lang, $this->title)
+		$text = $this->translated($lang, $this->text)
+		if ($translation) $model::change('id=?', $translation->id, uri: $uri, title: $title, text: $text)
+		else $model::create(...[$key => $this->id, 'lang' => $lang, 'uri' => $uri, 'title' => $title, 'text' => $text])
+	}
+}
+
+method translated($lang, $text){
+	if ($lang === 'en' || !$text) return $text
+	if (!%creds->OpenAI) return $text
+	try {
+		return %lang->translate('en', $lang, $text)
+	}
+	catch (\Throwable $e){
+		return $text
+	}
+}

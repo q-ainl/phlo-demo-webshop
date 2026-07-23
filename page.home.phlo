@@ -1,0 +1,19 @@
+method render => page($this->view, hero: $this->hero)
+
+method hero => %layout->hero('The Art of the Corset', 'Exclusive materials for the modern couturier.')
+
+view:
+<main#shop.shop-container>
+	{{ %page_products->filters }}
+	<section#main-content-area.products-area>
+		<div.toolbar>
+			<div.toolbar-left.breadcrumbs>
+				<span>{en: Welcome to L'Atelier de Corseterie. Discover our wonderful collection.}</span>
+			</div>
+		</div>
+		{{ %listing->category(6) }}
+		<div.page-center>
+			<a.cta-btn.async href="/%app->lang/%shop->products">{en: Browse the full collection}</a>
+		</div>
+	</section>
+</main>

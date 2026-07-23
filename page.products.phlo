@@ -1,0 +1,130 @@
+prop pp = 12
+
+method catalog($colorFilter = null, $materialFilter = null, $offset = 0){
+	if ($colorFilter && is_numeric($colorFilter)){
+		$offset = (int)$colorFilter
+		$colorFilter = null
+	}
+	if ($materialFilter && is_numeric($materialFilter)){
+		$offset = (int)$materialFilter
+		$materialFilter = null
+	}
+	if ($offset && !is_numeric($offset)) $offset = 0
+	$colors = $colorFilter ? array_values(array_filter(explode(comma, $colorFilter))) : []
+	$materials = $materialFilter ? array_values(array_filter(explode(comma, $materialFilter))) : []
+	$colors = $colors ? array_values(array_intersect($colors, $this->allColors)) : []
+	$materials = $materials ? array_values(array_intersect($materials, $this->allMaterials)) : []
+	$where = 'active=1'
+	if ($colors) $where .= ' AND color IN ('.implode(comma, loop($colors, fn($c) => sq.$c.sq)).')'
+	if ($materials) $where .= ' AND material IN ('.implode(comma, loop($materials, fn($m) => sq.$m.sq)).')'
+	$products = product::records(limit: $this->limit($offset), where: $where)
+	page($this->view(null, null, $products), en('Collection'))
+}
+
+method category($category, $subcategory = null, $offset = 0){
+	if ($category && !$subcategory && ($parentId = $category->parentId)){
+		if ($parent = category::record(id: $parentId)){
+			$subcategory = $category
+			$category = $parent
+		}
+	}
+	if ($subcategory){
+		$products = $subcategory->products(limit: $this->limit($offset))
+		$title = $subcategory->name
+	}
+	else {
+		$categoryIds = [(int)$category->id]
+		if ($children = $category->children) $categoryIds = array_merge($categoryIds, array_map('intval', array_keys($children)))
+		$products = product::records (
+			limit: $this->limit($offset),
+			joins: 'JOIN category_products cp ON cp.product=products.id',
+			where: 'cp.category IN ('.implode(comma, $categoryIds).') AND products.active=1',
+			group: 'products.id',
+		)
+		$title = $category->name
+	}
+	page($this->view($category, $subcategory, $products), $title)
+}
+
+method limit($offset) => $offset ? ($this->pp * $offset).comma.$this->pp : $this->pp
+
+prop allColors => array_values(array_filter(product::column(columns: 'DISTINCT color', where: "active=1 AND color != ''", order: 'color ASC')))
+prop allMaterials => array_values(array_filter(product::column(columns: 'DISTINCT material', where: "active=1 AND material != ''", order: 'material ASC')))
+prop selectedColors => (%req->part(1) === %shop->products && ($slug = %req->part(2)) && !is_numeric($slug)) ? array_values(array_intersect(explode(comma, $slug), $this->allColors)) : []
+prop selectedMaterials => (%req->part(1) === %shop->products && ($slug = %req->part(3)) && !is_numeric($slug)) ? array_values(array_intersect(explode(comma, $slug), $this->allMaterials)) : []
+prop activeCategorySlug => %req->part(1) === %shop->category ? %req->part(2) : null
+prop activeSubSlug => (%req->part(1) === %shop->category && ($sub = %req->part(3)) && !is_numeric($sub)) ? $sub : null
+
+view($category, $subcategory, $products):
+<main#shop.shop-container.shop-container--no-hero>
+	{{ $this->filters }}
+	<section#main-content-area.products-area>
+		<div.toolbar>
+			<div.toolbar-left.breadcrumbs>
+				Shop{( $category ? ' / '.esc($category->name) : void )}{( $subcategory ? ' / '.esc($subcategory->name) : void )}
+			</div>
+		</div>
+		<if $category && $text = $category->description>
+			<p>{{ strtr(esc($text), ['\n' => br]) }}</p>
+		</if>
+		{{ %listing->category($this->pp, 'grid', $products) }}
+	</section>
+</main>
+
+view filters:
+<aside#filters-panel.filters-sidebar>
+	<div.filter-group>
+		<h4>{en: Category}</h4>
+		<ul.filter-list>
+			{( ($slug = $this->activeCategorySlug ?? $this->activeSubSlug) ? void : void )}
+			<li>
+				<a class="filter-btn async{( $slug ? void : ' active' )}" href="/%app->lang/%shop->products">{en: All products}</a>
+			</li>
+			<foreach %layout->mainCategories AS $category>
+				{( ($children = $category->children) ? void : void )}
+				{( ($isChildActive = ($slug && $children && in_array($slug, loop($children, fn($c) => $c->slug)))) ? void : void )}
+				{( ($isParentActive = ($slug && ($category->slug === $slug || $isChildActive))) ? void : void )}
+				<li>
+					<div.filter-parent>
+						<a class="filter-btn async{( $isParentActive ? ' active' : void )}" href="$category->url">$category->name</a>
+					</div>
+					<if $children && $isParentActive>
+						<div class="sub-filter-group is-open active" id="cat-{{ $category->id }}">
+							<foreach $children AS $child>
+								<a class="filter-btn sub-filter-btn async{( ($slug && $child->slug === $slug) ? ' active' : void )}" href="$child->url">$child->name</a>
+							</foreach>
+						</div>
+					</if>
+				</li>
+			</foreach>
+		</ul>
+	</div>
+	<div.filter-group>
+		<h4>{en: Colour}</h4>
+		<div.color-options>
+			{( ($selectedColors = $this->selectedColors) ? void : void )}
+			{( ($materialSlug = $this->selectedMaterials ? implode(comma, $this->selectedMaterials) : void) ? void : void )}
+			<foreach $this->allColors AS $color>
+				{( ($isActive = in_array($color, $selectedColors)) ? void : void )}
+				{( ($nextColors = $isActive ? array_values(array_diff($selectedColors, [$color])) : array_values(array_unique(array_merge($selectedColors, [$color])))) ? void : void )}
+				{( ($nextSlug = $nextColors ? implode(comma, $nextColors) : void) ? void : void )}
+				<a class="async color-circle color-{( $color )}{( $isActive ? ' active' : void )}" href="/%app->lang/%shop->products{( $nextSlug || $materialSlug ? slash.($nextSlug ?: dash) : void )}{( $materialSlug ? slash.$materialSlug : void )}" title="{{ ucfirst(en($color)) }}" aria-label="{{ ucfirst(en($color)) }}"></a>
+			</foreach>
+		</div>
+	</div>
+	<div.filter-group>
+		<h4>{en: Material}</h4>
+		<ul.filter-list>
+			{( ($selectedMaterials = $this->selectedMaterials) ? void : void )}
+			{( ($colorSlug = $this->selectedColors ? implode(comma, $this->selectedColors) : void) ? void : void )}
+			<foreach $this->allMaterials AS $material>
+				{( ($isActive = in_array($material, $selectedMaterials)) ? void : void )}
+				{( ($nextMaterials = $isActive ? array_values(array_diff($selectedMaterials, [$material])) : array_values(array_unique(array_merge($selectedMaterials, [$material])))) ? void : void )}
+				{( ($nextSlug = $nextMaterials ? implode(comma, $nextMaterials) : void) ? void : void )}
+				<li>
+					<a class="filter-btn async{( $isActive ? ' active' : void )}" href="/%app->lang/%shop->products{( $colorSlug || $nextSlug ? slash.($colorSlug ?: dash) : void )}{( $nextSlug ? slash.$nextSlug : void )}">{{ ucfirst(en($material)) }}</a>
+				</li>
+			</foreach>
+		</ul>
+	</div>
+</aside>

@@ -1,0 +1,21 @@
+// The session cart: variant id => amount, stored in the PHP session.
+
+%session
+
+method items => $_SESSION['cart'] ??= []
+method count => array_sum($this->items)
+method sum => array_sum(loop($this->items, fn($amount, $variant) => ($v = $this->variants[$variant] ?? null) ? $v->price * $amount : 0))
+method clear => $_SESSION['cart'] = []
+
+method add($variant){
+	$_SESSION['cart'][$variant] = ($_SESSION['cart'][$variant] ?? 0) + 1
+	return $this->count
+}
+
+method set($id, $amount){
+	if ($amount) $_SESSION['cart'][$id] = $amount
+	else unset($_SESSION['cart'][$id])
+}
+
+prop variants => ($ids = array_map('intval', array_keys($this->items))) ? variant::records(where: 'id IN ('.implode(comma, $ids).') AND active=1') : []
+prop products => ($ids = array_map('intval', loop($this->variants, fn($variant) => $variant->productId))) ? product::records(where: 'id IN ('.implode(comma, $ids).') AND active=1') : []
