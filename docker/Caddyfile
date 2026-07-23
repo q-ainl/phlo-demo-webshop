@@ -1,0 +1,23 @@
+{
+	frankenphp
+}
+
+# The storefront.
+:80 {
+	root * /app/www
+	encode zstd gzip
+	@notStatic not file
+	rewrite @notStatic /app.php
+	php_server
+}
+
+# The Phlo CMS admin: the same app, switched by PHLO_ADMIN (see app.phlo).
+:8081 {
+	root * /app/www
+	encode zstd gzip
+	@notStatic not file
+	rewrite @notStatic /app.php
+	php_server {
+		env PHLO_ADMIN 1
+	}
+}

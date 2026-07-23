@@ -8,7 +8,7 @@ prop description = 'L\'Atelier Corseterie: exclusive corsetry supplies for the m
 // admin answers on its own entry: any hostname starting with demo.admin. (live),
 // listening port 8081 (Docker/localhost), or PHLO_ADMIN=1 in the environment.
 // CMS links are root-relative, so the admin gets a root of its own, not a sub-path.
-prop admin => getenv('PHLO_ADMIN') === '1' || str_starts_with(strtolower($_SERVER['HTTP_HOST'] ?? void), 'demo.admin.') || ($_SERVER['SERVER_PORT'] ?? null) === '8081'
+prop admin => ($_SERVER['PHLO_ADMIN'] ?? getenv('PHLO_ADMIN')) === '1' || str_starts_with(strtolower($_SERVER['HTTP_HOST'] ?? void), 'demo.admin.') || ($_SERVER['SERVER_PORT'] ?? null) === '8081'
 
 // The CMS builds its whole admin (nav, lists, records, REST API) from these two
 // declarations. Variants, stock, images and translations are children of the
